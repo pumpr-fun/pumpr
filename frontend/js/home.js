@@ -343,11 +343,12 @@ function setProfileMenuOpen(open) {
 
 function formatLaunchMarketCap(launch) {
   const dexMcap = Number(launch?.dexSnapshot?.marketCapUsd || launch?.dexSnapshot?.fdvUsd || 0);
-  const graduated = Boolean(launch?.pool?.graduated);
-  if (!graduated && dexMcap <= 0) {
-    return "Syncing MC";
-  }
-  const usd = dexMcap > 0 ? dexMcap : weiToUsd(launch?.pool?.marketCapWei || "0", state.ethUsd);
+  const poolMcapWei = launch?.pool?.marketCapWei || "0";
+  const poolMcapEth = Number(launch?.pool?.marketCapEth || 0);
+  const poolMcapUsdFromEth = Number.isFinite(poolMcapEth) && poolMcapEth > 0 ? poolMcapEth * Number(state.ethUsd || 0) : 0;
+  const poolMcapUsd = weiToUsd(poolMcapWei, state.ethUsd);
+  const fallbackUsd = Math.max(poolMcapUsd, poolMcapUsdFromEth, Number(launch?.marketCapUsd || 0), 0);
+  const usd = dexMcap > 0 ? dexMcap : fallbackUsd;
   return usd > 0 ? `${formatCompactUsd(usd)} MC` : "Syncing MC";
 }
 
