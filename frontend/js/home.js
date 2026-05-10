@@ -345,8 +345,12 @@ function setProfileMenuOpen(open) {
 function formatLaunchMarketCap(launch) {
   const dexMcapRaw = Number(launch?.dexSnapshot?.marketCapUsd || 0);
   const dexLiqUsd = Number(launch?.dexSnapshot?.liquidityUsd || 0);
+  const dexVolUsd = Number(launch?.dexSnapshot?.volume24hUsd || 0);
   const poolMcapWei = launch?.pool?.marketCapWei || "0";
   const poolMcapEth = Number(launch?.pool?.marketCapEth || 0);
+  const poolEthReserve = Number(launch?.pool?.ethReserveEth || 0);
+  const poolTokenReserve = BigInt(String(launch?.pool?.tokenReserve || "0"));
+  const isGraduated = Boolean(launch?.pool?.graduated);
   const poolMcapUsdFromEth = Number.isFinite(poolMcapEth) && poolMcapEth > 0 ? poolMcapEth * Number(state.ethUsd || 0) : 0;
   const poolMcapUsd = weiToUsd(poolMcapWei, state.ethUsd);
   // Do not trust launch-level marketCapUsd here; it may be a seeded/default value (e.g. 1M target cap),
@@ -357,6 +361,11 @@ function formatLaunchMarketCap(launch) {
     fallbackUsd > 0 &&
     (dexMcapRaw / fallbackUsd > 25 || (dexLiqUsd > 0 && dexMcapRaw / dexLiqUsd > 2500));
   const dexMcap = dexLooksInflated ? 0 : dexMcapRaw;
+  const hasDexSignal = dexLiqUsd > 0 || dexVolUsd > 0;
+  const hasPoolSignal = poolEthReserve > 0 || poolTokenReserve > 0n;
+  if (!isGraduated && !hasDexSignal && !hasPoolSignal) {
+    return "Syncing MC";
+  }
   const usd = dexMcap > 0 ? dexMcap : fallbackUsd;
   if (usd <= 0) return "Syncing MC";
   let label = "";
