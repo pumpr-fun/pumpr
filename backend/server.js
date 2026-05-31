@@ -29,6 +29,7 @@ const SUPABASE_PROFILE_TABLE = String(process.env.SUPABASE_PROFILE_TABLE || "use
 const SUPABASE_FOLLOW_TABLE = String(process.env.SUPABASE_FOLLOW_TABLE || "user_follows").trim();
 const SUPABASE_SCHEMA = String(process.env.SUPABASE_SCHEMA || "public").trim();
 const SUPABASE_STORAGE_BUCKET = String(process.env.SUPABASE_STORAGE_BUCKET || "uploads").trim();
+const SUPABASE_COMMUNITY_OBJECT = String(process.env.SUPABASE_COMMUNITY_OBJECT || "community/community.json").trim();
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || "0") === "1";
 const STRICT_SOCIAL_STORE = String(process.env.STRICT_SOCIAL_STORE || (STRICT_PROFILE_STORE ? "1" : "0")) === "1";
@@ -117,6 +118,7 @@ let profileDbCache = null;
 let followDbCache = null;
 let supportDbCache = null;
 let communityDbCache = null;
+let communityDbRemoteLoaded = false;
 const profileLastKnownCache = new Map();
 const xOauthStates = new Map();
 
@@ -1029,6 +1031,83 @@ function writeCommunityDb(store) {
   communityDbCache = store;
 }
 
+function emptyCommunityStore() {
+  return { posts: [], comments: {}, likes: {} };
+}
+
+function sanitizeCommunityStore(store) {
+  if (!store || typeof store !== "object" || Array.isArray(store)) return emptyCommunityStore();
+  return {
+    posts: Array.isArray(store.posts) ? store.posts : [],
+    comments: store.comments && typeof store.comments === "object" && !Array.isArray(store.comments) ? store.comments : {},
+    likes: store.likes && typeof store.likes === "object" && !Array.isArray(store.likes) ? store.likes : {}
+  };
+}
+
+async function readCommunityDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_COMMUNITY_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_COMMUNITY_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase community read failed: ${response.status} ${text}`.trim());
+  }
+  return sanitizeCommunityStore(await response.json().catch(() => emptyCommunityStore()));
+}
+
+async function writeCommunityDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_COMMUNITY_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_COMMUNITY_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizeCommunityStore(store), null, 2)
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase community write failed: ${response.status} ${text}`.trim());
+  }
+  return true;
+}
+
+async function readCommunityDbPersistent(options = {}) {
+  const refresh = Boolean(options.refresh);
+  if (isSupabaseStorageConfigured() && (refresh || !communityDbRemoteLoaded)) {
+    try {
+      const remote = await readCommunityDbRemote();
+      if (remote) {
+        communityDbCache = remote;
+        writeCommunityDb(remote);
+      }
+      communityDbRemoteLoaded = true;
+    } catch (error) {
+      console.warn(`Supabase community read failed: ${error?.message || "connection error"}`);
+      communityDbRemoteLoaded = true;
+    }
+  }
+  return sanitizeCommunityStore(readCommunityDb());
+}
+
+async function writeCommunityDbPersistent(store) {
+  const safe = sanitizeCommunityStore(store);
+  writeCommunityDb(safe);
+  if (isSupabaseStorageConfigured()) {
+    await writeCommunityDbRemote(safe);
+  }
+  return safe;
+}
+
 function sanitizeCommunityText(value, max = 280) {
   return Array.from(String(value || "").replace(/\s+/g, " ").trim()).slice(0, max).join("");
 }
@@ -1097,10 +1176,10 @@ function normalizeCommunityComment(row = {}, postId = "") {
   };
 }
 
-function listCommunityPosts(tokenAddress, limit = 60) {
+function listCommunityPosts(tokenAddress, limit = 60, storeOverride = null) {
   const token = normalizeAddress(tokenAddress || "");
   if (!token) return [];
-  const store = readCommunityDb();
+  const store = storeOverride || readCommunityDb();
   const posts = Array.isArray(store.posts) ? store.posts : [];
   return posts
     .map(normalizeCommunityPost)
@@ -1109,8 +1188,8 @@ function listCommunityPosts(tokenAddress, limit = 60) {
     .slice(0, Math.max(1, Math.min(100, Number(limit || 60))));
 }
 
-function listAllCommunityPosts(limit = 80) {
-  const store = readCommunityDb();
+function listAllCommunityPosts(limit = 80, storeOverride = null) {
+  const store = storeOverride || readCommunityDb();
   const posts = Array.isArray(store.posts) ? store.posts : [];
   return posts
     .map(normalizeCommunityPost)
@@ -1124,8 +1203,8 @@ function listAllCommunityPosts(limit = 80) {
     .slice(0, Math.max(1, Math.min(120, Number(limit || 80))));
 }
 
-function communityStatsForToken(tokenAddress) {
-  const posts = listCommunityPosts(tokenAddress, 500);
+function communityStatsForToken(tokenAddress, storeOverride = null) {
+  const posts = listCommunityPosts(tokenAddress, 500, storeOverride);
   const now = Math.floor(Date.now() / 1000);
   const posts24h = posts.filter((post) => Number(post.createdAt || 0) >= now - 24 * 60 * 60).length;
   const comments = posts.reduce((sum, post) => sum + (Array.isArray(post.comments) ? post.comments.length : 0), 0);
@@ -1137,9 +1216,9 @@ function communityStatsForToken(tokenAddress) {
   return { posts: posts.length, posts24h, comments, members: members.size };
 }
 
-function communityStatsByToken() {
+function communityStatsByToken(storeOverride = null) {
   const out = new Map();
-  for (const post of listAllCommunityPosts(1000)) {
+  for (const post of listAllCommunityPosts(1000, storeOverride)) {
     const key = post.token.toLowerCase();
     const prev = out.get(key) || { token: post.token, posts: 0, likes: 0, comments: 0, latestAt: 0, members: new Set() };
     prev.posts += 1;
@@ -1153,7 +1232,7 @@ function communityStatsByToken() {
   return out;
 }
 
-function createCommunityPost(value = {}) {
+async function createCommunityPost(value = {}) {
   const token = normalizeAddress(value.token || value.tokenAddress || "");
   const xHandle = normalizeXHandle(value.xHandle || "");
   const author = normalizeAddress(value.author || value.address || "") || pseudoAddressForXHandle(xHandle);
@@ -1161,7 +1240,7 @@ function createCommunityPost(value = {}) {
   if (!token) throw new Error("token is required");
   if (!author) throw new Error("author is required");
   if (!body) throw new Error("post text is required");
-  const store = readCommunityDb();
+  const store = await readCommunityDbPersistent();
   const post = normalizeCommunityPost({
     id: communityPostId(),
     token,
@@ -1176,11 +1255,11 @@ function createCommunityPost(value = {}) {
     comments: []
   });
   store.posts = [post, ...(Array.isArray(store.posts) ? store.posts : [])].slice(0, 2000);
-  writeCommunityDb(store);
+  await writeCommunityDbPersistent(store);
   return post;
 }
 
-function createCommunityComment(postId, value = {}) {
+async function createCommunityComment(postId, value = {}) {
   const id = String(postId || "");
   const xHandle = normalizeXHandle(value.xHandle || "");
   const author = normalizeAddress(value.author || value.address || "") || pseudoAddressForXHandle(xHandle);
@@ -1188,7 +1267,7 @@ function createCommunityComment(postId, value = {}) {
   if (!id) throw new Error("post id is required");
   if (!author) throw new Error("author is required");
   if (!body) throw new Error("comment text is required");
-  const store = readCommunityDb();
+  const store = await readCommunityDbPersistent();
   const posts = Array.isArray(store.posts) ? store.posts : [];
   const post = posts.find((row) => String(row?.id || "") === id);
   if (!post) throw new Error("post not found");
@@ -1204,16 +1283,16 @@ function createCommunityComment(postId, value = {}) {
     createdAt: Math.floor(Date.now() / 1000)
   }, id);
   post.comments = [...(Array.isArray(post.comments) ? post.comments : []), comment].slice(-100);
-  writeCommunityDb(store);
+  await writeCommunityDbPersistent(store);
   return normalizeCommunityPost(post);
 }
 
-function setCommunityLike(postId, address, liked) {
+async function setCommunityLike(postId, address, liked) {
   const id = String(postId || "");
   const viewer = normalizeAddress(address || "");
   if (!id) throw new Error("post id is required");
   if (!viewer) throw new Error("address is required");
-  const store = readCommunityDb();
+  const store = await readCommunityDbPersistent();
   const posts = Array.isArray(store.posts) ? store.posts : [];
   const post = posts.find((row) => String(row?.id || "") === id);
   if (!post) throw new Error("post not found");
@@ -1221,7 +1300,7 @@ function setCommunityLike(postId, address, liked) {
   if (liked) likes.add(viewer.toLowerCase());
   else likes.delete(viewer.toLowerCase());
   post.likes = [...likes];
-  writeCommunityDb(store);
+  await writeCommunityDbPersistent(store);
   return normalizeCommunityPost(post);
 }
 
@@ -3140,8 +3219,9 @@ app.post("/api/follow", async (req, res) => {
 app.get("/api/communities", async (req, res) => {
   try {
     const limit = Math.max(1, Math.min(120, Number(req.query.limit || 80)));
-    const posts = listAllCommunityPosts(limit);
-    const byToken = communityStatsByToken();
+    const store = await readCommunityDbPersistent({ refresh: true });
+    const posts = listAllCommunityPosts(limit, store);
+    const byToken = communityStatsByToken(store);
     const topCommunities = [...byToken.values()]
       .map((row) => ({
         token: row.token,
@@ -3165,10 +3245,11 @@ app.get("/api/community/:token", async (req, res) => {
     const token = normalizeAddress(req.params.token || "");
     if (!token) return res.status(400).json({ error: "Invalid token address" });
     const limit = Math.max(1, Math.min(100, Number(req.query.limit || 60)));
+    const store = await readCommunityDbPersistent({ refresh: true });
     res.json({
       token,
-      stats: communityStatsForToken(token),
-      posts: listCommunityPosts(token, limit)
+      stats: communityStatsForToken(token, store),
+      posts: listCommunityPosts(token, limit, store)
     });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to load community" });
@@ -3298,8 +3379,9 @@ app.get("/api/x/oauth/callback", async (req, res) => {
 app.post("/api/community/:token/post", async (req, res) => {
   try {
     const token = normalizeAddress(req.params.token || "");
-    const post = createCommunityPost({ ...(req.body || {}), token });
-    res.json({ post, stats: communityStatsForToken(token) });
+    const post = await createCommunityPost({ ...(req.body || {}), token });
+    const store = await readCommunityDbPersistent();
+    res.json({ post, stats: communityStatsForToken(token, store) });
   } catch (error) {
     const text = String(error?.message || "Failed to create post");
     const status = text.toLowerCase().includes("required") || text.toLowerCase().includes("invalid") ? 400 : 500;
@@ -3311,8 +3393,9 @@ app.post("/api/community/:token/posts/:postId/comment", async (req, res) => {
   try {
     const token = normalizeAddress(req.params.token || "");
     if (!token) return res.status(400).json({ error: "Invalid token address" });
-    const post = createCommunityComment(req.params.postId, req.body || {});
-    res.json({ post, stats: communityStatsForToken(token) });
+    const post = await createCommunityComment(req.params.postId, req.body || {});
+    const store = await readCommunityDbPersistent();
+    res.json({ post, stats: communityStatsForToken(token, store) });
   } catch (error) {
     const text = String(error?.message || "Failed to add comment");
     const status = text.toLowerCase().includes("required") || text.toLowerCase().includes("not found") ? 400 : 500;
@@ -3324,8 +3407,9 @@ app.post("/api/community/:token/posts/:postId/like", async (req, res) => {
   try {
     const token = normalizeAddress(req.params.token || "");
     if (!token) return res.status(400).json({ error: "Invalid token address" });
-    const post = setCommunityLike(req.params.postId, req.body?.address, Boolean(req.body?.liked));
-    res.json({ post, stats: communityStatsForToken(token) });
+    const post = await setCommunityLike(req.params.postId, req.body?.address, Boolean(req.body?.liked));
+    const store = await readCommunityDbPersistent();
+    res.json({ post, stats: communityStatsForToken(token, store) });
   } catch (error) {
     const text = String(error?.message || "Failed to update like");
     const status = text.toLowerCase().includes("required") || text.toLowerCase().includes("not found") ? 400 : 500;

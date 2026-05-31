@@ -61,7 +61,8 @@ const state = {
   launchesByToken: new Map(),
   xProfile: loadXAuth(),
   activeTab: "top",
-  walletControls: null
+  walletControls: null,
+  refreshing: false
 };
 
 function escapeHtml(value) {
@@ -513,15 +514,35 @@ async function loadTokenCommunity() {
   await hydrateUserProfiles(authorAddresses).catch(() => {});
 }
 
+async function refreshCommunity({ silent = false } = {}) {
+  if (state.refreshing) return;
+  state.refreshing = true;
+  try {
+    state.token = tokenFromUrl();
+    if (state.token) await loadTokenCommunity();
+    else await loadGlobalCommunities();
+    renderShell();
+    renderStats();
+    renderTopCommunities();
+    renderMembers();
+    renderFeed();
+  } catch (error) {
+    if (!silent) throw error;
+    console.warn("[communities] live refresh failed", error);
+  } finally {
+    state.refreshing = false;
+  }
+}
+
 async function loadPage() {
-  state.token = tokenFromUrl();
-  if (state.token) await loadTokenCommunity();
-  else await loadGlobalCommunities();
-  renderShell();
-  renderStats();
-  renderTopCommunities();
-  renderMembers();
-  renderFeed();
+  await refreshCommunity();
+}
+
+function scheduleLiveRefresh(delay = 0) {
+  window.setTimeout(() => {
+    if (document.hidden) return;
+    refreshCommunity({ silent: true });
+  }, Math.max(0, Number(delay || 0)));
 }
 
 function startXOAuth() {
@@ -557,6 +578,7 @@ async function publishPost() {
   renderStats();
   renderMembers();
   renderFeed();
+  scheduleLiveRefresh(350);
 }
 
 function updateCharCount() {
@@ -597,6 +619,7 @@ function setupEvents() {
     state.stats = payload.stats;
     renderStats();
     renderFeed();
+    scheduleLiveRefresh(350);
   });
   ui.feed?.addEventListener("submit", async (event) => {
     event.preventDefault();
@@ -625,6 +648,7 @@ function setupEvents() {
     renderStats();
     renderMembers();
     renderFeed();
+    scheduleLiveRefresh(350);
   });
   ui.shareBtn?.addEventListener("click", async () => {
     const url = window.location.href;
@@ -669,6 +693,9 @@ async function init() {
     // keep default chips
   }
   await loadPage();
+  window.setInterval(() => {
+    if (!document.hidden) refreshCommunity({ silent: true });
+  }, 8000);
 }
 
 init().catch((err) => {
