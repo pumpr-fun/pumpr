@@ -1,0 +1,23 @@
+{
+  "chainId": 1,
+  "quoteMode": "usdc",
+  "quoteAsset": {
+    "mode": "usdc",
+    "symbol": "USDC",
+    "name": "USD Coin",
+    "address": "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    "decimals": 6,
+    "isNative": false
+  },
+  "deployedAt": "2026-06-05T00:00:00.000Z",
+  "memeLaunchFactory": "0x3584208Bc6252Ee38665197b9a7e4a7Fe8Fe49b2",
+  "feeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
+  "platformFeeRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3",
+  "feeBps": 50,
+  "launchFeeWei": "1500000000000000",
+  "virtualQuoteReserve": "1500000000",
+  "virtualTokenReserve": "1000000000000000000000000",
+  "graduationTargetQuote": "36000000000",
+  "dexRouter": "0x7a250d5630B4cF539739dF2C5dAcb4c659F2488D",
+  "lpRecipient": "0xEF1F5aa00C169B2F5ca4f4ab47350e7DB17c84D3"
+}

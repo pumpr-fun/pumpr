@@ -1,6 +1,7 @@
 import { api } from "./api.js";
 import {
   FACTORY_ABI,
+  TOKEN_ABI,
   defaultUsername,
   disconnectWallet,
   ensureWalletChain,
@@ -125,8 +126,10 @@ const state = {
   config: null,
   selectedChainId: 1,
   selectedLaunchMode: "1",
+  selectedQuoteMode: "native",
   selectedPumpVerseChains: [1, 8453],
   supportedChains: [],
+  quoteLaunchOptions: [],
   ethUsd: 3000,
   lastPumpVerseDetails: null,
   lastPumpVerseResults: []
@@ -135,6 +138,14 @@ const LAUNCH_CHAIN_CHOICES = [
   { chainId: 1, name: "Ethereum", shortName: "ETH", networkLabel: "Mainnet" },
   { chainId: 8453, name: "Base", shortName: "BASE", networkLabel: "Mainnet" },
   { chainId: 143, name: "Monad", shortName: "MONAD", networkLabel: "Mainnet" },
+  {
+    mode: "usdc:1",
+    name: "Ethereum + USDC",
+    shortName: "ETH + USDC",
+    networkLabel: "USDC-paired bonding curve",
+    requiredChains: [1],
+    quoteMode: "usdc"
+  },
   {
     mode: "pumpverse",
     name: "PumpVerse",
@@ -238,6 +249,17 @@ function isPumpVerseMode() {
   return String(state.selectedLaunchMode || "").startsWith("pumpverse:");
 }
 
+function selectedQuoteMode() {
+  return state.selectedQuoteMode === "usdc" ? "usdc" : "native";
+}
+
+function selectedQuoteAsset() {
+  if (state.config?.quoteAsset) return state.config.quoteAsset;
+  return selectedQuoteMode() === "usdc"
+    ? { mode: "usdc", symbol: "USDC", decimals: 6, address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48", isNative: false }
+    : { mode: "native", symbol: "ETH", decimals: 18, address: ethers.ZeroAddress, isNative: true };
+}
+
 function configuredChainMap() {
   const map = new Map();
   for (const row of state.supportedChains) {
@@ -295,11 +317,14 @@ function pumpVerseLabel(chains = state.selectedPumpVerseChains) {
 function renderChainSelector() {
   const current = selectedChain();
   const supported = configuredChainMap();
+  const quoteOptions = Array.isArray(state.quoteLaunchOptions) ? state.quoteLaunchOptions : [];
   const monadConfigured = supported.has(143);
   const configuredCount = supported.size;
   if (ui.launchChainLabel) {
     ui.launchChainLabel.textContent = isPumpVerseMode()
       ? "PumpVerse"
+      : selectedQuoteMode() === "usdc"
+      ? "Ethereum + USDC"
       : current?.name || state.config?.chainName || "Ethereum";
   }
   if (ui.netChip && state.config) {
@@ -311,6 +336,8 @@ function renderChainSelector() {
   if (ui.launchChainHint) {
     ui.launchChainHint.textContent = isPumpVerseMode()
       ? `PumpVerse launches the same token details on ${pumpVerseLabel()}. MetaMask will ask for separate confirmations.`
+      : selectedQuoteMode() === "usdc"
+      ? "USDC launches use a USDC-paired bonding curve. Buyers can still route from ETH through Uniswap after graduation."
       : monadConfigured
       ? "Wallet will switch to the selected network before launch."
       : "Monad launches are ready once the Monad factory address is configured.";
@@ -320,15 +347,20 @@ function renderChainSelector() {
       .map((choice) => {
         const mode = choice.mode || String(choice.chainId);
         const isPumpVerseParent = mode === "pumpverse";
+        const isUsdcMode = choice.quoteMode === "usdc";
         const requiredChains = Array.isArray(choice.requiredChains) ? choice.requiredChains : [choice.chainId];
         const enabled = isPumpVerseParent
           ? configuredCount >= Number(choice.requiredMinChains || 2)
+          : isUsdcMode
+          ? quoteOptions.some((row) => row.mode === "usdc" && Number(row.chainId) === 1 && row.factoryAddress)
           : requiredChains.every((chainId) => supported.has(Number(chainId)));
         const row = choice.chainId ? supported.get(choice.chainId) : null;
         const active = enabled && (isPumpVerseParent ? isPumpVerseMode() : String(mode) === String(state.selectedLaunchMode));
         const chainAttr = choice.chainId ? `data-chain-id="${choice.chainId}"` : "";
         const description = isPumpVerseParent
           ? "Choose two or three chains"
+          : isUsdcMode
+          ? `USDC pair${enabled ? "" : " - configure USDC factory"}`
           : `${row?.shortName || choice.shortName} ${choice.networkLabel}${enabled ? "" : " - configure factory"}`;
         return `
           <button class="create-chain-option${isPumpVerseParent ? " pumpverse" : ""}${active ? " active" : ""}${enabled ? "" : " disabled"}" type="button" ${chainAttr} data-launch-mode="${mode}" role="tab" aria-selected="${active ? "true" : "false"}" ${enabled ? "" : "disabled aria-disabled=\"true\""}>
@@ -361,11 +393,13 @@ function renderChainSelector() {
     .join("");
 }
 
-async function loadChainConfig(chainId = state.selectedChainId) {
-  const next = await api.config({ chainId });
+async function loadChainConfig(chainId = state.selectedChainId, quoteMode = selectedQuoteMode()) {
+  const next = await api.config({ chainId, quote: quoteMode });
   state.config = next;
   state.selectedChainId = Number(next.chainId || chainId || 1);
+  state.selectedQuoteMode = next.quoteMode || quoteMode || "native";
   state.supportedChains = normalizeSupportedChains(next);
+  state.quoteLaunchOptions = Array.isArray(next.quoteLaunchOptions) ? next.quoteLaunchOptions : [];
   setPreferredChainId(state.selectedChainId);
   renderChainSelector();
   updateLaunchMath({ source: "liquidity" });
@@ -382,7 +416,8 @@ async function selectLaunchChain(chainId) {
   }
   try {
     setAlert(ui.alert, `Loading ${chainNameForId(target)} launch settings...`);
-    await loadChainConfig(target);
+    await loadChainConfig(target, "native");
+    state.selectedQuoteMode = "native";
     state.selectedLaunchMode = String(target);
     renderChainSelector();
     const ws = walletState();
@@ -394,6 +429,25 @@ async function selectLaunchChain(chainId) {
   } catch (err) {
     setAlert(ui.alert, parseUiError(err), true);
     await loadChainConfig(state.selectedChainId).catch(() => {});
+  }
+}
+
+async function selectUsdcLaunchMode() {
+  try {
+    setAlert(ui.alert, "Loading Ethereum + USDC launch settings...");
+    await loadChainConfig(1, "usdc");
+    state.selectedChainId = 1;
+    state.selectedQuoteMode = "usdc";
+    state.selectedLaunchMode = "usdc:1";
+    renderChainSelector();
+    const ws = walletState();
+    if (ws.signer) {
+      await ensureWalletChain(1);
+      await walletHub?.refresh();
+    }
+    setAlert(ui.alert, "Ethereum + USDC selected for launch.");
+  } catch (err) {
+    setAlert(ui.alert, parseUiError(err), true);
   }
 }
 
@@ -718,6 +772,9 @@ function getLaunchEconomics(
   const creatorBuyEth = Math.max(0, creatorBuyEthInput);
   const creatorPct = creatorBuyEth;
   const ethUsd = Number.isFinite(state.ethUsd) && state.ethUsd > 0 ? state.ethUsd : 3000;
+  const quote = selectedQuoteAsset();
+  const quoteSymbol = quote.symbol || "ETH";
+  const quoteUsd = selectedQuoteMode() === "usdc" ? 1 : ethUsd;
 
   const creatorFraction = Math.min(Math.max(creatorPct / 100, 0), 0.9999);
   const poolFraction = Math.max(0.0001, 1 - creatorFraction);
@@ -725,8 +782,8 @@ function getLaunchEconomics(
   const mcapMultiplier = poolTokens > 0 ? totalSupply / poolTokens : 0;
 
   const marketCapEth = liquidityEth > 0 ? liquidityEth * mcapMultiplier : 0;
-  const marketCapUsd = marketCapEth * ethUsd;
-  const oneEthMcapUsd = mcapMultiplier * ethUsd;
+  const marketCapUsd = marketCapEth * quoteUsd;
+  const oneEthMcapUsd = mcapMultiplier * quoteUsd;
   const minLiquidityEth = requiredMinLiquidityEth(walletState().address);
   const minTargetMcapUsd = minLiquidityEth * mcapMultiplier * ethUsd;
   return {
@@ -740,6 +797,7 @@ function getLaunchEconomics(
     marketCapEth,
     marketCapUsd,
     oneEthMcapUsd,
+    quoteSymbol,
     minLiquidityEth,
     minTargetMcapUsd
   };
@@ -771,7 +829,7 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
   if (ui.launchMathPrimary) {
     ui.launchMathPrimary.textContent =
       economics.liquidityEth > 0
-        ? `Optional starter buy market cap: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ETH)`
+        ? `Optional starter buy market cap: ${formatUsd(economics.marketCapUsd)} (~${economics.marketCapEth.toFixed(4)} ${economics.quoteSymbol})`
         : "Bonding curve starts at the configured virtual reserve price.";
   }
   if (ui.launchMathSecondary) {
@@ -782,7 +840,7 @@ function updateLaunchMath({ source = "liquidity" } = {}) {
       economics.liquidityEth > 0 ? "Starter buy is sent as the first pool buy after launch." : "No starter buy selected.";
   }
   if (ui.launchMathQuaternary) {
-    ui.launchMathQuaternary.textContent = `At your settings, 1 ETH starter buy estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`;
+    ui.launchMathQuaternary.textContent = `At your settings, 1 ${economics.quoteSymbol} starter buy estimates ${formatUsd(economics.oneEthMcapUsd)} market cap`;
   }
   if (ui.creatorAllocationPreview) {
     const symbol = String(ui.symbol?.value || "TOKEN").trim().toUpperCase() || "TOKEN";
@@ -1025,11 +1083,11 @@ function hideCreatedModal() {
   ui.createdModal.setAttribute("aria-hidden", "true");
 }
 
-function showCreatedModal({ name, symbol, token, chainId = state.selectedChainId }) {
+function showCreatedModal({ name, symbol, token, chainId = state.selectedChainId, quoteMode = selectedQuoteMode() }) {
   if (!ui.createdModal || !token) return;
   ui.createdTokenName.textContent = `${name} ($${symbol})`;
   ui.createdTokenAddress.textContent = token;
-  ui.openTokenBtn.href = `/token?token=${token}&chainId=${chainId}`;
+  ui.openTokenBtn.href = `/token?token=${token}&chainId=${chainId}${quoteMode === "usdc" ? "&quote=usdc" : ""}`;
   ui.createdModal.classList.add("open");
   ui.createdModal.setAttribute("aria-hidden", "false");
 }
@@ -1096,13 +1154,13 @@ async function prepareLaunchDetails() {
     description,
     totalSupply: ethers.parseUnits(totalSupplyInput, 18),
     creatorBps: BigInt(Math.round(creatorAllocationPct * 100)),
-    starterBuyEth: ethers.parseEther(initialLiquidityEthInput || "0")
+    starterBuyEth: ethers.parseUnits(initialLiquidityEthInput || "0", selectedQuoteAsset().decimals || 18)
   };
 }
 
-async function launchOnChain(chainId, details, { showModal = true } = {}) {
+async function launchOnChain(chainId, details, { showModal = true, quoteMode = selectedQuoteMode() } = {}) {
   const target = Number(chainId || 0);
-  await loadChainConfig(target);
+  await loadChainConfig(target, quoteMode);
   state.selectedChainId = Number(state.config?.chainId || target);
   await ensureWalletChain(state.selectedChainId);
   await walletHub?.refresh();
@@ -1110,7 +1168,7 @@ async function launchOnChain(chainId, details, { showModal = true } = {}) {
   const factory = makeFactoryContract(state.config.factoryAddress);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
   const totalValue = launchFeeWei;
-  await assertLaunchBalance({ launchFeeWei, starterBuyEth: details.starterBuyEth });
+  await assertLaunchBalance({ launchFeeWei, starterBuyEth: selectedQuoteMode() === "usdc" ? 0n : details.starterBuyEth });
 
   const simulated = await factory.createLaunch.staticCall(
     details.name,
@@ -1122,7 +1180,7 @@ async function launchOnChain(chainId, details, { showModal = true } = {}) {
     { value: totalValue }
   );
 
-  const chainName = state.config.chainName || chainLabel(state.selectedChainId);
+  const chainName = selectedQuoteMode() === "usdc" ? "Ethereum + USDC" : state.config.chainName || chainLabel(state.selectedChainId);
   if (launchFeeWei > 0n) {
     const launchFeeEth = Number(ethers.formatEther(launchFeeWei)).toFixed(6);
     setAlert(ui.alert, `Creating bonding-curve launch on ${chainName} (launch fee ${launchFeeEth} ETH)...`);
@@ -1160,26 +1218,50 @@ async function launchOnChain(chainId, details, { showModal = true } = {}) {
     const quoted = await pool.quoteBuy(details.starterBuyEth);
     const quotedTokens = BigInt(quoted?.[0] || 0n);
     const minTokensOut = quotedTokens > 0n ? (quotedTokens * 97n) / 100n : 0n;
-    const buyTx = await sendTxWithFallback({
-      label: `${chainName} Starter Bonding Buy`,
-      populatedTx: pool.buy.populateTransaction(minTokensOut, { value: details.starterBuyEth }),
-      walletNativeSend: () => pool.buy(minTokensOut, { value: details.starterBuyEth })
-    });
+    let buyTx;
+    if (selectedQuoteMode() === "usdc") {
+      const ws = walletState();
+      const quote = selectedQuoteAsset();
+      const usdc = new ethers.Contract(quote.address, TOKEN_ABI, ws.signer);
+      const allowance = await usdc.allowance(ws.address, launchInfo.pool);
+      if (allowance < details.starterBuyEth) {
+        setAlert(ui.alert, "Approving USDC starter buy...");
+        const approveTx = await sendTxWithFallback({
+          label: "Approve USDC Starter Buy",
+          populatedTx: usdc.approve.populateTransaction(launchInfo.pool, ethers.MaxUint256),
+          walletNativeSend: () => usdc.approve(launchInfo.pool, ethers.MaxUint256)
+        });
+        await approveTx.wait();
+      }
+      buyTx = await sendTxWithFallback({
+        label: `${chainName} Starter USDC Buy`,
+        populatedTx: pool.buyWithQuote.populateTransaction(details.starterBuyEth, minTokensOut),
+        walletNativeSend: () => pool.buyWithQuote(details.starterBuyEth, minTokensOut)
+      });
+    } else {
+      buyTx = await sendTxWithFallback({
+        label: `${chainName} Starter Bonding Buy`,
+        populatedTx: pool.buy.populateTransaction(minTokensOut, { value: details.starterBuyEth }),
+        walletNativeSend: () => pool.buy(minTokensOut, { value: details.starterBuyEth })
+      });
+    }
     await buyTx.wait();
   }
 
   if (launchInfo?.token) {
-    ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=${state.selectedChainId}`;
+    const quoteQuery = selectedQuoteMode() === "usdc" ? "&quote=usdc" : "";
+    ui.resultLink.href = `/token?token=${launchInfo.token}&chainId=${state.selectedChainId}${quoteQuery}`;
     ui.resultLink.textContent = `Open ${chainName} ${shortAddress(launchInfo.token)} token page`;
     ui.resultLink.style.display = "inline-block";
     if (showModal) {
-      showCreatedModal({ name: details.name, symbol: details.symbol, token: launchInfo.token, chainId: state.selectedChainId });
+      showCreatedModal({ name: details.name, symbol: details.symbol, token: launchInfo.token, chainId: state.selectedChainId, quoteMode: selectedQuoteMode() });
     }
   }
 
   return {
     ok: true,
     chainId: state.selectedChainId,
+    quoteMode: selectedQuoteMode(),
     token: launchInfo?.token || "",
     pool: launchInfo?.pool || "",
     launchId: launchInfo?.launchId
@@ -1200,7 +1282,7 @@ async function launchPumpVerse(details) {
     try {
       setSubmitting(true, `Launching ${chainLabel(chainId)}...`);
       setAlert(ui.alert, `PumpVerse: launching on ${chainLabel(chainId)}...`);
-      const result = await launchOnChain(chainId, details, { showModal: false });
+      const result = await launchOnChain(chainId, details, { showModal: false, quoteMode: "native" });
       results.push(result);
       state.lastPumpVerseResults = [...results];
       renderLaunchResults(results);
@@ -1240,7 +1322,7 @@ async function retryPumpVerseChain(chainId) {
   try {
     setSubmitting(true, `Retrying ${chainLabel(target)}...`);
     setAlert(ui.alert, `Retrying PumpVerse launch on ${chainLabel(target)}...`);
-    const result = await launchOnChain(target, details, { showModal: false });
+    const result = await launchOnChain(target, details, { showModal: false, quoteMode: "native" });
     const existing = Array.isArray(state.lastPumpVerseResults) ? state.lastPumpVerseResults : [];
     const next = existing.filter((row) => Number(row.chainId) !== target).concat(result).sort((a, b) => Number(a.chainId) - Number(b.chainId));
     state.lastPumpVerseResults = next;
@@ -1377,6 +1459,10 @@ async function init() {
     }
     if (String(button.dataset.launchMode || "").startsWith("pumpverse:")) {
       selectPumpVerseMode(button.dataset.launchMode);
+      return;
+    }
+    if (String(button.dataset.launchMode || "") === "usdc:1") {
+      selectUsdcLaunchMode();
       return;
     }
     selectLaunchChain(button.dataset.chainId);

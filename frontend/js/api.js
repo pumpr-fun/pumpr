@@ -54,7 +54,11 @@ export const api = {
   health: () => apiGet("/api/health"),
   config: (options = {}) => {
     const chainId = Number(options.chainId || 0);
-    return apiGet(chainId > 0 ? `/api/config?chainId=${Math.floor(chainId)}` : "/api/config");
+    const params = new URLSearchParams();
+    if (chainId > 0) params.set("chainId", String(Math.floor(chainId)));
+    if (options.quote) params.set("quote", String(options.quote));
+    const qs = params.toString();
+    return apiGet(`/api/config${qs ? `?${qs}` : ""}`);
   },
   stats: () => apiGet("/api/stats"),
   launches: (limit = 20, offset = 0, options = {}) => {
@@ -66,6 +70,7 @@ export const api = {
     if (options.lite) params.set("lite", "1");
     if (options.fresh) params.set("fresh", "1");
     if (Number.isFinite(Number(options.chainId))) params.set("chainId", String(Math.floor(Number(options.chainId))));
+    if (options.quote) params.set("quote", String(options.quote));
     return apiGet(`/api/launches?${params.toString()}`);
   },
   token: (tokenAddress, options = {}) => {
@@ -74,6 +79,7 @@ export const api = {
     if (options.lite) params.set("lite", "1");
     if (Number.isFinite(Number(options.launchId))) params.set("launchId", String(Math.floor(Number(options.launchId))));
     if (Number.isFinite(Number(options.chainId))) params.set("chainId", String(Math.floor(Number(options.chainId))));
+    if (options.quote) params.set("quote", String(options.quote));
     const qs = params.toString();
     return apiGet(`/api/token/${tokenAddress}${qs ? `?${qs}` : ""}`);
   },

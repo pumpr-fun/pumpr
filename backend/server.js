@@ -50,6 +50,10 @@ const V2_PAIR_ABI = [
   "event Swap(address indexed sender, uint amount0In, uint amount1In, uint amount0Out, uint amount1Out, address indexed to)"
 ];
 const V2_ROUTER_ABI = ["function WETH() view returns (address)"];
+const POOL_READ_ABI = [
+  ...POOL_ARTIFACT.abi,
+  "function quoteToken() view returns (address)"
+];
 const GECKO_NETWORK_BY_CHAIN = {
   1: "eth",
   143: "monad",
@@ -110,6 +114,24 @@ const CHAIN_META = {
     explorerBaseUrl: "",
     rpcUrls: ["http://127.0.0.1:8545"],
     dexRouter: ethers.ZeroAddress
+  }
+};
+const QUOTE_ASSETS = {
+  native: {
+    mode: "native",
+    symbol: "ETH",
+    name: "Native",
+    address: ethers.ZeroAddress,
+    decimals: 18,
+    isNative: true
+  },
+  usdc: {
+    mode: "usdc",
+    symbol: "USDC",
+    name: "USD Coin",
+    address: "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48",
+    decimals: 6,
+    isNative: false
   }
 };
 
@@ -346,6 +368,15 @@ function parseChainId(value) {
   return Math.floor(num);
 }
 
+function normalizeQuoteMode(value = "native") {
+  const text = String(value || "native").trim().toLowerCase();
+  return text === "usdc" ? "usdc" : "native";
+}
+
+function resolveRequestedQuoteMode(req) {
+  return normalizeQuoteMode(req?.query?.quote || req?.headers?.["x-quote-mode"] || "native");
+}
+
 function parseJsonObjectEnv(key) {
   const raw = String(process.env[key] || "").trim();
   if (!raw) return {};
@@ -406,7 +437,61 @@ function readFactoryMapFromEnv() {
   return map;
 }
 
-function resolveFactoryAddress(chainId, deployment) {
+function readQuoteFactoryMapFromEnv(quoteMode = "native") {
+  const normalized = normalizeQuoteMode(quoteMode);
+  const map = new Map();
+  if (normalized === "native") return map;
+
+  const dir = path.join(FRONTEND_DIR, "deployments");
+  if (fs.existsSync(dir)) {
+    for (const name of fs.readdirSync(dir)) {
+      if (!new RegExp(`^\\d+\\.${normalized}\\.json$`).test(name)) continue;
+      try {
+        const parsed = JSON.parse(fs.readFileSync(path.join(dir, name), "utf8"));
+        const chainId = parseChainId(parsed?.chainId || name.split(".")[0]);
+        if (!chainId || !ethers.isAddress(parsed?.memeLaunchFactory)) continue;
+        map.set(chainId, ethers.getAddress(parsed.memeLaunchFactory));
+      } catch {
+        // Ignore malformed optional quote deployment files.
+      }
+    }
+  }
+
+  const upper = normalized.toUpperCase();
+  const jsonMap = parseJsonObjectEnv(`${upper}_FACTORY_ADDRESSES`);
+  for (const [chain, address] of Object.entries(jsonMap)) {
+    const chainId = parseChainId(chain);
+    if (!chainId || !ethers.isAddress(address)) continue;
+    map.set(chainId, ethers.getAddress(address));
+  }
+
+  for (const [key, value] of Object.entries(process.env)) {
+    const m = key.match(new RegExp(`^${upper}_FACTORY_ADDRESS_(\\d+)$`));
+    if (!m) continue;
+    const chainId = parseChainId(m[1]);
+    if (!chainId || !ethers.isAddress(value)) continue;
+    map.set(chainId, ethers.getAddress(value));
+  }
+
+  const envChain = parseChainId(process.env.CHAIN_ID) || 1;
+  const direct = String(process.env[`${upper}_FACTORY_ADDRESS`] || "").trim();
+  if (envChain && ethers.isAddress(direct)) {
+    map.set(envChain, ethers.getAddress(direct));
+  }
+
+  return map;
+}
+
+function resolveFactoryAddress(chainId, deployment, quoteMode = "native") {
+  const normalizedQuote = normalizeQuoteMode(quoteMode);
+  if (normalizedQuote !== "native") {
+    const quoteMap = readQuoteFactoryMapFromEnv(normalizedQuote);
+    if (quoteMap.has(chainId)) {
+      return quoteMap.get(chainId);
+    }
+    throw new Error(`No ${normalizedQuote.toUpperCase()} factory configured for chain ${chainId}`);
+  }
+
   const deploymentChain = parseChainId(deployment?.chainId);
   if (deploymentChain === chainId && ethers.isAddress(deployment?.memeLaunchFactory)) {
     return ethers.getAddress(deployment.memeLaunchFactory);
@@ -434,7 +519,7 @@ function resolveRequestedChainId(req, deployment) {
   if (!requested) return fallback;
 
   try {
-    resolveFactoryAddress(requested, deployment);
+    resolveFactoryAddress(requested, deployment, resolveRequestedQuoteMode(req));
     return requested;
   } catch {
     return fallback;
@@ -468,6 +553,26 @@ function resolveSupportedChains(deployment) {
       };
     })
     .sort((a, b) => chainRank(a.chainId) - chainRank(b.chainId));
+}
+
+function resolveQuoteLaunchOptions() {
+  const rows = [];
+  const usdcMap = readQuoteFactoryMapFromEnv("usdc");
+  for (const [chainId, factoryAddress] of usdcMap.entries()) {
+    const meta = CHAIN_META[chainId] || {};
+    rows.push({
+      mode: "usdc",
+      chainId,
+      name: `${meta.name || `Chain ${chainId}`} + USDC`,
+      shortName: `${meta.shortName || String(chainId)} + USDC`,
+      nativeCurrency: meta.nativeCurrency || "ETH",
+      factoryAddress,
+      quoteAsset: QUOTE_ASSETS.usdc,
+      explorerBaseUrl: explorerBaseForChain(chainId),
+      dexRouter: meta.dexRouter || ethers.ZeroAddress
+    });
+  }
+  return rows.sort((a, b) => Number(a.chainId) - Number(b.chainId));
 }
 
 function pickRpcUrls(chainId) {
@@ -588,6 +693,8 @@ async function buildContext(chainId, factoryAddress, deployment = loadDeployment
   return {
     deployment,
     chainId: normalizedChainId,
+    quoteMode: normalizeQuoteMode(options.quoteMode || "native"),
+    quoteAsset: QUOTE_ASSETS[normalizeQuoteMode(options.quoteMode || "native")] || QUOTE_ASSETS.native,
     rpcUrl,
     provider,
     factory,
@@ -597,12 +704,13 @@ async function buildContext(chainId, factoryAddress, deployment = loadDeployment
 
 async function getContext(requestedChainId = null, options = {}) {
   const deployment = loadDeploymentConfig();
+  const quoteMode = normalizeQuoteMode(options.quoteMode || "native");
   const chainId = requestedChainId || defaultChainIdFromConfig(deployment);
-  const factoryAddress = resolveFactoryAddress(chainId, deployment);
-  const key = `${chainId}:${factoryAddress.toLowerCase()}`;
+  const factoryAddress = resolveFactoryAddress(chainId, deployment, quoteMode);
+  const key = `${quoteMode}:${chainId}:${factoryAddress.toLowerCase()}`;
 
   if (!contextCache.has(key)) {
-    contextCache.set(key, await buildContext(chainId, factoryAddress, deployment, options));
+    contextCache.set(key, await buildContext(chainId, factoryAddress, deployment, { ...options, quoteMode }));
   }
 
   return contextCache.get(key);
@@ -2947,6 +3055,8 @@ function buildPoolFallbackFromLaunch(launch) {
   const marketCapWei = totalSupply > 0n ? (spotPriceWei * totalSupply) / 10n ** 18n : 0n;
   const fdvWei = marketCapWei;
   return {
+    quoteMode: "native",
+    quoteAsset: QUOTE_ASSETS.native,
     feeBps: 50,
     graduated: false,
     migratedPair: ethers.ZeroAddress,
@@ -2982,7 +3092,7 @@ async function readPoolSnapshot(provider, launch, options = {}) {
     return cachedSnapshot;
   }
 
-  const pool = new ethers.Contract(launch.pool, POOL_ARTIFACT.abi, provider);
+  const pool = new ethers.Contract(launch.pool, POOL_READ_ABI, provider);
   const callOr = async (fn, fallback) => {
     try {
       return await fn();
@@ -2991,7 +3101,7 @@ async function readPoolSnapshot(provider, launch, options = {}) {
     }
   };
 
-  const [spotPrice, tokenReserve, ethReserve, feeBps, graduated, graduationTargetEth, targetProgressBps, migratedPair, dexRouter, lpRecipient] =
+  const [spotPrice, tokenReserve, ethReserve, feeBps, graduated, graduationTargetEth, targetProgressBps, migratedPair, dexRouter, lpRecipient, quoteToken] =
     await Promise.all([
       callOr(() => pool.spotPrice(), 0n),
       callOr(() => pool.tokenReserve(), 0n),
@@ -3002,8 +3112,13 @@ async function readPoolSnapshot(provider, launch, options = {}) {
       callOr(() => pool.targetProgressBps(), 0n),
       callOr(() => pool.migratedPair(), ethers.ZeroAddress),
       callOr(() => pool.dexRouter(), ethers.ZeroAddress),
-      callOr(() => pool.lpRecipient(), ethers.ZeroAddress)
+      callOr(() => pool.lpRecipient(), ethers.ZeroAddress),
+      callOr(() => pool.quoteToken(), ethers.ZeroAddress)
     ]);
+  const requestedQuote = options.quoteAsset || null;
+  const isUsdcQuote = String(quoteToken || "").toLowerCase() === QUOTE_ASSETS.usdc.address.toLowerCase() || normalizeQuoteMode(options.quoteMode) === "usdc";
+  const quoteAsset = isUsdcQuote ? QUOTE_ASSETS.usdc : requestedQuote || QUOTE_ASSETS.native;
+  const quoteDecimals = Number(quoteAsset?.decimals || 18);
 
   const totalSupply = BigInt(launch.totalSupply);
   let currentPriceWei = BigInt(spotPrice);
@@ -3081,23 +3196,30 @@ async function readPoolSnapshot(provider, launch, options = {}) {
     priceSource,
     spotPriceWei: spotPrice.toString(),
     effectiveSpotPriceWei: currentPriceWei.toString(),
+    quoteMode: quoteAsset.mode || "native",
+    quoteAsset,
     spotPriceEth: toFloat(currentPriceWei, 18, 18),
+    spotPriceQuote: toFloat(currentPriceWei, 18, 18),
     tokenReserve: tokenReserve.toString(),
     ethReserveWei: ethReserve.toString(),
-    ethReserveEth: toFloat(ethReserve),
+    ethReserveEth: toFloat(ethReserve, quoteDecimals),
+    quoteReserve: toFloat(ethReserve, quoteDecimals),
     dexWethReserveWei: dexWethReserveWei.toString(),
     dexWethReserveEth: toFloat(dexWethReserveWei),
     dexWethAddress,
     dexTokenReserve: dexTokenReserveWei.toString(),
     graduationTargetEthWei: graduationTargetEth.toString(),
-    graduationTargetEth: toFloat(graduationTargetEth),
+    graduationTargetEth: toFloat(graduationTargetEth, quoteDecimals),
+    graduationTargetQuote: toFloat(graduationTargetEth, quoteDecimals),
     bondingProgressBps: Number(targetProgressBps),
     bondingProgressPct: Number((Number(targetProgressBps) / 100).toFixed(2)),
     circulatingSupply: circulating.toString(),
     fdvWei: fdvWei.toString(),
-    fdvEth: toFloat(fdvWei),
+    fdvEth: toFloat(fdvWei, 18),
+    fdvQuote: toFloat(fdvWei, 18),
     marketCapWei: marketCapWei.toString(),
-    marketCapEth: toFloat(marketCapWei)
+    marketCapEth: toFloat(marketCapWei, 18),
+    marketCapQuote: toFloat(marketCapWei, 18)
   };
 
   setCachedValue(poolSnapshotCache, snapshotCacheKey, snapshot, POOL_SNAPSHOT_CACHE_TTL_MS);
@@ -3601,18 +3723,23 @@ app.get("/api/health", async (req, res) => {
 app.get("/api/config", async (req, res) => {
   try {
     const deployment = loadDeploymentConfig();
+    const quoteMode = resolveRequestedQuoteMode(req);
     const requestedChainId = resolveRequestedChainId(req, deployment);
     const chainId = requestedChainId;
-    const factoryAddress = resolveFactoryAddress(chainId, deployment);
+    const factoryAddress = resolveFactoryAddress(chainId, deployment, quoteMode);
     const rpcUrls = pickRpcUrls(chainId);
     const supportedChains = resolveSupportedChains(deployment);
+    const quoteLaunchOptions = resolveQuoteLaunchOptions();
     const chainMeta = CHAIN_META[chainId] || {};
     const chainDeployment = loadChainDeploymentConfig(chainId);
+    const quoteAsset = QUOTE_ASSETS[quoteMode] || QUOTE_ASSETS.native;
     const effectiveDeployment = {
       ...deployment,
       ...(chainDeployment || {}),
       chainId,
       memeLaunchFactory: factoryAddress,
+      quoteMode,
+      quoteAsset,
       dexRouter: chainDeployment?.dexRouter || chainMeta.dexRouter || deployment.dexRouter || ethers.ZeroAddress
     };
 
@@ -3622,8 +3749,11 @@ app.get("/api/config", async (req, res) => {
       chainShortName: chainMeta.shortName || String(chainId),
       nativeCurrency: chainMeta.nativeCurrency || "ETH",
       requestedChainId: parseChainId(req?.query?.chainId || req?.headers?.["x-chain-id"]),
+      quoteMode,
+      quoteAsset,
       factoryAddress,
       supportedChains,
+      quoteLaunchOptions,
       deployment: effectiveDeployment,
       rpcUrl: rpcUrls[0] || "",
       rpcUrls,
@@ -3645,9 +3775,10 @@ app.get("/api/launches", async (req, res) => {
 
     const deployment = loadDeploymentConfig();
     const requestedChainId = resolveRequestedChainId(req, deployment);
-    const ctx = await getContext(requestedChainId, { verify: false });
+    const quoteMode = resolveRequestedQuoteMode(req);
+    const ctx = await getContext(requestedChainId, { verify: false, quoteMode });
     const count = await readFactoryLaunchCount(ctx.factory);
-    const launchesKey = `${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${count}:${limit}:${offset}:${includeDex ? "dex" : "nodex"}:${lite ? "lite" : "full"}`;
+    const launchesKey = `${ctx.quoteMode}:${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${count}:${limit}:${offset}:${includeDex ? "dex" : "nodex"}:${lite ? "lite" : "full"}`;
     const builder = async () => {
       const page = await readLaunchPage(ctx, limit, offset);
       const creatorAddresses = [...new Set(page.launches.map((launch) => String(launch?.creator || "").toLowerCase()).filter(Boolean))];
@@ -3666,7 +3797,11 @@ app.get("/api/launches", async (req, res) => {
         let dexSnapshot = null;
         try {
           // Even in lite mode, read live pool snapshot so home cards don't stick to seeded defaults.
-          pool = await withTimeout(readPoolSnapshot(ctx.provider, launch), lite ? 1800 : RPC_READ_TIMEOUT_MS, "pool snapshot");
+          pool = await withTimeout(
+            readPoolSnapshot(ctx.provider, launch, { quoteMode: ctx.quoteMode, quoteAsset: ctx.quoteAsset }),
+            lite ? 1800 : RPC_READ_TIMEOUT_MS,
+            "pool snapshot"
+          );
         } catch {
           pool = buildPoolFallbackFromLaunch(launch);
         }
@@ -4548,10 +4683,11 @@ async function handleTokenRequest(req, res, tokenCandidate) {
     const deployment = loadDeploymentConfig();
     const requestedChainId = resolveRequestedChainId(req, deployment);
     const lite = String(req.query.lite || "0") === "1";
-    const ctx = await getContext(requestedChainId, { verify: !lite });
+    const quoteMode = resolveRequestedQuoteMode(req);
+    const ctx = await getContext(requestedChainId, { verify: !lite, quoteMode });
     const launchIdHintRaw = req.query?.launchId ?? req.query?.id;
     const launchIdHint = Number.isFinite(Number(launchIdHintRaw)) ? Math.floor(Number(launchIdHintRaw)) : null;
-    const tokenKey = `${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${tokenAddress.toLowerCase()}:${lite ? "lite" : "full"}:${launchIdHint ?? "scan"}`;
+    const tokenKey = `${ctx.quoteMode}:${ctx.chainId}:${ctx.factoryAddress.toLowerCase()}:${tokenAddress.toLowerCase()}:${lite ? "lite" : "full"}:${launchIdHint ?? "scan"}`;
     const forceFresh = String(req.query.fresh || "0") === "1";
     const builder = async () => {
       let launch = null;
@@ -4584,7 +4720,11 @@ async function handleTokenRequest(req, res, tokenCandidate) {
         ...launch,
         imageURI: sanitizeLaunchImageUri(launch.imageURI)
       };
-      const poolBase = await readPoolSnapshot(ctx.provider, safeLaunch, { fresh: forceFresh }).catch(() => buildPoolFallbackFromLaunch(safeLaunch));
+      const poolBase = await readPoolSnapshot(ctx.provider, safeLaunch, {
+        fresh: forceFresh,
+        quoteMode: ctx.quoteMode,
+        quoteAsset: ctx.quoteAsset
+      }).catch(() => buildPoolFallbackFromLaunch(safeLaunch));
       const emptyFeeSnapshot = {
         creator: ethers.ZeroAddress,
         platformFeeRecipient: ethers.ZeroAddress,

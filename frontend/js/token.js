@@ -1,5 +1,6 @@
 ﻿import { api } from "./api.js";
 import {
+  TOKEN_ABI,
   defaultUsername,
   disconnectWallet,
   ethToUsd,
@@ -179,6 +180,8 @@ const state = {
   livePoints: [],
   allSeries: [],
   chainId: 1,
+  quoteMode: "native",
+  quoteAsset: { mode: "native", symbol: "ETH", decimals: 18, address: "0x0000000000000000000000000000000000000000", isNative: true },
   gecko: null,
   dex: null,
   ethUsd: 3000,
@@ -671,6 +674,23 @@ function getTokenFromUrl() {
   return "";
 }
 
+function getQuoteModeFromUrl() {
+  const params = new URLSearchParams(window.location.search);
+  return String(params.get("quote") || "").toLowerCase() === "usdc" ? "usdc" : "native";
+}
+
+function quoteDecimals() {
+  return Number(state.quoteAsset?.decimals || (state.quoteMode === "usdc" ? 6 : 18));
+}
+
+function quoteSymbol() {
+  return String(state.quoteAsset?.symbol || (state.quoteMode === "usdc" ? "USDC" : "ETH"));
+}
+
+function isUsdcQuote() {
+  return state.quoteMode === "usdc" || String(state.launch?.pool?.quoteMode || "").toLowerCase() === "usdc";
+}
+
 async function fetchJsonRaw(path) {
   const res = await fetch(path, { cache: "no-store" });
   if (!res.ok) {
@@ -691,6 +711,7 @@ async function fetchTokenRaw(tokenAddress, options = {}) {
   if (options.fresh) params.set("fresh", "1");
   if (options.lite) params.set("lite", "1");
   if (options.chainId) params.set("chainId", String(options.chainId));
+  if (options.quote) params.set("quote", String(options.quote));
   if (Number.isFinite(Number(options.launchId))) params.set("launchId", String(Math.floor(Number(options.launchId))));
   const qs = params.toString();
   return fetchJsonRaw(`/api/token/${tokenAddress}${qs ? `?${qs}` : ""}`);
@@ -1233,7 +1254,7 @@ function setSideMetrics(launch) {
     ui.bondingStatusText.textContent = dexReady
       ? "Graduated to Uniswap. Trading now routes through the DEX pair."
       : bondingReady
-        ? `${formatTradeNumber(reserve, 4)} / ${formatTradeNumber(target, 4)} ETH raised before automatic Uniswap graduation.`
+        ? `${formatTradeNumber(reserve, 4)} / ${formatTradeNumber(target, 4)} ${quoteSymbol()} raised before automatic Uniswap graduation.`
         : "Bonding pool is syncing.";
   }
 
@@ -1416,7 +1437,7 @@ function destroyLocalChart() {
 
 function renderGeckoChart(launch) {
   const url = geckoPoolUrl(launch);
-  const label = `${launch.symbol || "TOKEN"}/ETH - GeckoTerminal`;
+  const label = `${launch.symbol || "TOKEN"}/${quoteSymbol()} - GeckoTerminal`;
   if (!url) return false;
   if (!ui.priceChart) return false;
 
@@ -1554,7 +1575,7 @@ function renderChart() {
   const latest = candles[candles.length - 1];
   const latestVol = volumes[volumes.length - 1];
   const rangeLabel = String(state.range || "").toUpperCase();
-  ui.chartPairLabel.textContent = `${state.launch?.symbol || "TOKEN"}/ETH ${state.mode === "price" ? "Price (ETH)" : "Market Cap (USD)"} - ${rangeLabel}`;
+  ui.chartPairLabel.textContent = `${state.launch?.symbol || "TOKEN"}/${quoteSymbol()} ${state.mode === "price" ? `Price (${quoteSymbol()})` : "Market Cap (USD)"} - ${rangeLabel}`;
   ui.chartOpen.textContent = latest ? priceFormat(latest.open) : "-";
   ui.chartHigh.textContent = latest ? priceFormat(latest.high) : "-";
   ui.chartLow.textContent = latest ? priceFormat(latest.low) : "-";
@@ -1821,10 +1842,18 @@ async function refreshWalletBalance() {
     return;
   }
   try {
-    const balance = await ws.provider.getBalance(ws.address);
-    const ethBalance = Number(ethers.formatUnits(balance, 18));
-    const usdBalance = ethToUsd(ethBalance, state.ethUsd);
-    ui.walletBalance.textContent = `${formatEth(balance, 4)} ETH`;
+    let balance = await ws.provider.getBalance(ws.address);
+    let balanceDecimals = 18;
+    let balanceSymbol = "ETH";
+    let usdBalance = ethToUsd(Number(ethers.formatUnits(balance, 18)), state.ethUsd);
+    if (isUsdcQuote() && state.quoteAsset?.address) {
+      const quote = new ethers.Contract(state.quoteAsset.address, TOKEN_ABI, ws.signer);
+      balance = await quote.balanceOf(ws.address);
+      balanceDecimals = quoteDecimals();
+      balanceSymbol = quoteSymbol();
+      usdBalance = Number(ethers.formatUnits(balance, balanceDecimals));
+    }
+    ui.walletBalance.textContent = `${formatAmountForInput(balance, balanceDecimals, 4)} ${balanceSymbol}`;
     if (ui.walletBalanceUsd) ui.walletBalanceUsd.textContent = `(${formatCompactUsd(usdBalance)})`;
   } catch {
     ui.walletBalance.textContent = "Unavailable";
@@ -1835,6 +1864,8 @@ async function refreshWalletBalance() {
 
 function renderTradePanel() {
   const symbol = String(state.launch?.symbol || "TOKEN").toUpperCase();
+  const qSymbol = quoteSymbol();
+  const qUsd = isUsdcQuote() ? 1 : state.ethUsd;
   const buyEth = toPositiveNumber(ui.buyInput?.value);
   const buyToken = toPositiveNumber(ui.buyTokenInput?.value);
   const sellToken = toPositiveNumber(ui.sellInput?.value);
@@ -1842,25 +1873,25 @@ function renderTradePanel() {
 
   if (state.isBuyTab) {
     if (ui.tradePrimaryAmount) ui.tradePrimaryAmount.textContent = formatTradeNumber(buyEth, 6);
-    if (ui.tradePrimaryUnit) ui.tradePrimaryUnit.textContent = "ETH";
+    if (ui.tradePrimaryUnit) ui.tradePrimaryUnit.textContent = qSymbol;
     if (ui.tradeApproxLine) {
-      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(ethToUsd(buyEth, state.ethUsd))} · ~ ${formatTradeNumber(
+      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(buyEth * qUsd)} · ~ ${formatTradeNumber(
         buyToken,
         4
       )} ${symbol}`;
     }
     if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive ˜ ${formatTradeNumber(buyToken, 4)} ${symbol}`;
-    if (ui.buyBtn) ui.buyBtn.textContent = buyEth > 0 ? `Buy ${formatTradeNumber(buyEth, 6)} ETH` : "Enter amount to buy";
+    if (ui.buyBtn) ui.buyBtn.textContent = buyEth > 0 ? `Buy ${formatTradeNumber(buyEth, 6)} ${qSymbol}` : "Enter amount to buy";
   } else {
     if (ui.tradePrimaryAmount) ui.tradePrimaryAmount.textContent = formatTradeNumber(sellToken, 4);
     if (ui.tradePrimaryUnit) ui.tradePrimaryUnit.textContent = symbol;
     if (ui.tradeApproxLine) {
-      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(ethToUsd(sellEth, state.ethUsd))} · ~ ${formatTradeNumber(
+      ui.tradeApproxLine.textContent = `~ ${formatCompactUsd(sellEth * qUsd)} · ~ ${formatTradeNumber(
         sellEth,
         6
-      )} ETH`;
+      )} ${qSymbol}`;
     }
-    if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive ˜ ${formatTradeNumber(sellEth, 6)} ETH`;
+    if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive ˜ ${formatTradeNumber(sellEth, 6)} ${qSymbol}`;
     if (ui.sellBtn) ui.sellBtn.textContent = sellToken > 0 ? `Sell ${formatTradeNumber(sellToken, 4)} ${symbol}` : "Enter amount to sell";
   }
 }
@@ -2128,7 +2159,8 @@ async function loadTokenPage(forceFresh = false, lite = false) {
       fresh: forceFresh,
       lite,
       launchId: seededLaunchId(),
-      chainId: state.chainId
+      chainId: state.chainId,
+      quote: state.quoteMode
     });
   } catch (err) {
     // First, attempt a chain-agnostic recovery for any token-load failure.
@@ -2161,7 +2193,8 @@ async function loadTokenPage(forceFresh = false, lite = false) {
           fresh: forceFresh,
           lite,
           launchId: seededLaunchId(),
-          chainId: state.chainId
+          chainId: state.chainId,
+          quote: state.quoteMode
         });
       } catch {
         const discovered = await discoverTokenAcrossChains(state.token);
@@ -2175,6 +2208,11 @@ async function loadTokenPage(forceFresh = false, lite = false) {
     }
   }
   if (payload?.launch?.creator) {
+    const payloadQuote = payload?.launch?.pool?.quoteAsset || null;
+    if (payloadQuote) {
+      state.quoteAsset = payloadQuote;
+      state.quoteMode = String(payloadQuote.mode || state.quoteMode || "native").toLowerCase() === "usdc" ? "usdc" : "native";
+    }
     const ws = walletState();
     const creatorAddress = String(payload.launch.creator || "");
     const forceCreatorProfile =
@@ -2289,7 +2327,7 @@ async function syncBuyTokenFromEth() {
   }
 
   try {
-    const ethIn = parseUnitsSafe(raw, 18);
+    const ethIn = parseUnitsSafe(raw, quoteDecimals());
     if (ethIn <= 0n) throw new Error("invalid eth");
     if (hasBondingMarket(state.launch)) {
       const pool = makePoolContract(poolAddressFromLaunch());
@@ -2314,7 +2352,7 @@ async function syncBuyTokenFromEth() {
       return;
     }
     try {
-      const ethIn = parseUnitsSafe(raw, 18);
+      const ethIn = parseUnitsSafe(raw, quoteDecimals());
       if (ethIn <= 0n) throw new Error("invalid eth");
       const approxTokenOut = (ethIn * 10n ** 18n) / price;
       ui.buyTokenInput.value = formatAmountForInput(approxTokenOut, 18, 4);
@@ -2344,7 +2382,7 @@ async function syncBuyEthFromToken() {
       const feeBps = BigInt(Number(state.launch?.pool?.feeBps || 0));
       const feeDenom = 10000n;
       const ethIn = feeBps > 0n ? (grossEth * feeDenom + (feeDenom - feeBps - 1n)) / (feeDenom - feeBps) : grossEth;
-      ui.buyInput.value = formatAmountForInput(ethIn, 18, 6);
+      ui.buyInput.value = formatAmountForInput(ethIn, quoteDecimals(), 6);
       renderTradePanel();
       return;
     }
@@ -2363,7 +2401,7 @@ async function syncBuyEthFromToken() {
       const tokenOut = parseUnitsSafe(raw, 18);
       if (tokenOut <= 0n) throw new Error("invalid token");
       const approxEthIn = (tokenOut * price) / 10n ** 18n;
-      ui.buyInput.value = formatAmountForInput(approxEthIn, 18, 6);
+      ui.buyInput.value = formatAmountForInput(approxEthIn, quoteDecimals(), 6);
       renderTradePanel();
     } catch {
       ui.buyInput.value = "";
@@ -2387,7 +2425,7 @@ async function syncSellEthFromToken() {
       const pool = makePoolContract(poolAddressFromLaunch());
       const quoted = await pool.quoteSell(tokenIn);
       if (ui.sellEthInput) {
-        ui.sellEthInput.value = formatAmountForInput(quoted?.[0] || 0n, 18, 6);
+        ui.sellEthInput.value = formatAmountForInput(quoted?.[0] || 0n, quoteDecimals(), 6);
       }
       renderTradePanel();
       return;
@@ -2409,7 +2447,7 @@ async function syncSellEthFromToken() {
       const tokenIn = parseUnitsSafe(raw, 18);
       if (tokenIn <= 0n) throw new Error("invalid token");
       const approxEthOut = (tokenIn * price) / 10n ** 18n;
-      ui.sellEthInput.value = formatAmountForInput(approxEthOut, 18, 6);
+      ui.sellEthInput.value = formatAmountForInput(approxEthOut, quoteDecimals(), 6);
       renderTradePanel();
     } catch {
       ui.sellEthInput.value = "";
@@ -2427,7 +2465,7 @@ async function syncSellTokenFromEth() {
   }
 
   try {
-    const ethOut = parseUnitsSafe(raw, 18);
+    const ethOut = parseUnitsSafe(raw, quoteDecimals());
     if (ethOut <= 0n) throw new Error("invalid eth");
     if (hasBondingMarket(state.launch)) {
       const price = spotPriceWei();
@@ -2449,7 +2487,7 @@ async function syncSellTokenFromEth() {
       return;
     }
     try {
-      const ethOut = parseUnitsSafe(raw, 18);
+      const ethOut = parseUnitsSafe(raw, quoteDecimals());
       if (ethOut <= 0n) throw new Error("invalid eth");
       const approxTokenIn = (ethOut * 10n ** 18n) / price;
       ui.sellInput.value = formatAmountForInput(approxTokenIn, 18, 4);
@@ -2469,9 +2507,9 @@ async function onBuy() {
       await syncBuyEthFromToken();
     }
     const amount = ui.buyInput.value.trim();
-    if (!amount) throw new Error("Enter ETH amount");
+    if (!amount) throw new Error(`Enter ${quoteSymbol()} amount`);
 
-    const ethIn = ethers.parseEther(amount);
+    const ethIn = parseUnitsSafe(amount, quoteDecimals());
     if (ethIn <= 0n) throw new Error("Amount must be > 0");
 
     const ws = walletState();
@@ -2482,11 +2520,31 @@ async function onBuy() {
       const minTokensOut = quotedTokens > 0n ? (quotedTokens * 97n) / 100n : 0n;
 
       setAlert(ui.alert, "Buying on bonding curve...");
-      const tx = await sendTxWithFallback({
-        label: "Bonding Buy",
-        populatedTx: pool.buy.populateTransaction(minTokensOut, { value: ethIn }),
-        walletNativeSend: () => pool.buy(minTokensOut, { value: ethIn })
-      });
+      let tx;
+      if (isUsdcQuote()) {
+        const quote = new ethers.Contract(state.quoteAsset.address, TOKEN_ABI, ws.signer);
+        const allowance = await quote.allowance(ws.address, poolAddressFromLaunch());
+        if (allowance < ethIn) {
+          setAlert(ui.alert, "Approving USDC...");
+          const approval = await sendTxWithFallback({
+            label: "Approve USDC",
+            populatedTx: quote.approve.populateTransaction(poolAddressFromLaunch(), ethers.MaxUint256),
+            walletNativeSend: () => quote.approve(poolAddressFromLaunch(), ethers.MaxUint256)
+          });
+          await approval.wait();
+        }
+        tx = await sendTxWithFallback({
+          label: "USDC Bonding Buy",
+          populatedTx: pool.buyWithQuote.populateTransaction(ethIn, minTokensOut),
+          walletNativeSend: () => pool.buyWithQuote(ethIn, minTokensOut)
+        });
+      } else {
+        tx = await sendTxWithFallback({
+          label: "Bonding Buy",
+          populatedTx: pool.buy.populateTransaction(minTokensOut, { value: ethIn }),
+          walletNativeSend: () => pool.buy(minTokensOut, { value: ethIn })
+        });
+      }
       const receipt = await tx.wait();
       const optimistic = buildSyntheticOptimisticTrade({
         side: "buy",
@@ -2665,10 +2723,13 @@ async function onSell() {
 
 async function init() {
   state.token = getTokenFromUrl();
+  state.quoteMode = getQuoteModeFromUrl();
 
   try {
-    const cfg = await api.config();
+    const cfg = await api.config({ quote: state.quoteMode });
     state.chainId = Number(cfg.chainId || 1);
+    if (cfg.quoteAsset) state.quoteAsset = cfg.quoteAsset;
+    state.quoteMode = String(cfg.quoteMode || state.quoteMode || "native").toLowerCase() === "usdc" ? "usdc" : "native";
     setPreferredChainId(state.chainId);
     state.explorerBaseUrl = cfg.explorerBaseUrl || "";
     if (ui.netChip) ui.netChip.textContent = `Chain ${cfg.chainId}`;

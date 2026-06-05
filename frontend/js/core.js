@@ -12,9 +12,11 @@ export const FACTORY_ABI = [
 
 export const POOL_ABI = [
   "function buy(uint256 minTokensOut) payable returns (uint256 tokensOut)",
+  "function buyWithQuote(uint256 quoteAmountIn,uint256 minTokensOut) returns (uint256 tokensOut)",
   "function sell(uint256 tokenAmountIn,uint256 minEthOut) returns (uint256 ethOut)",
   "function quoteBuy(uint256 ethAmountIn) view returns (uint256 tokensOut,uint256 feePaid)",
-  "function quoteSell(uint256 tokenAmountIn) view returns (uint256 ethOut,uint256 feePaid)"
+  "function quoteSell(uint256 tokenAmountIn) view returns (uint256 ethOut,uint256 feePaid)",
+  "function quoteToken() view returns (address)"
 ];
 
 export const TOKEN_ABI = [

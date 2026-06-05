@@ -15,6 +15,7 @@
     "deploy:go-escrow:mainnet": "hardhat run scripts/deploy-go-escrow.js --network mainnet",
     "deploy:go-escrow:base": "hardhat run scripts/deploy-go-escrow.js --network base",
     "deploy:go-escrow:monad": "hardhat run scripts/deploy-go-escrow.js --network monad",
+    "deploy:usdc-factory:mainnet": "hardhat run scripts/deploy-usdc-factory.js --network mainnet",
     "app": "node backend/server.js",
     "frontend": "node backend/server.js"
   },
