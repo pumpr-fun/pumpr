@@ -838,13 +838,30 @@ async function ensureSupabaseStorageBucket() {
   throw new Error(`Supabase bucket create failed: ${createRes.status} ${text}`.trim());
 }
 
-async function uploadImageToSupabaseStorage(binary, ext = "png") {
+const UPLOAD_CONTENT_TYPES = {
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  webp: "image/webp",
+  gif: "image/gif",
+  svg: "image/svg+xml",
+  pdf: "application/pdf",
+  txt: "text/plain",
+  csv: "text/csv",
+  json: "application/json",
+  mp4: "video/mp4",
+  webm: "video/webm",
+  mov: "video/quicktime"
+};
+
+async function uploadBinaryToSupabaseStorage(binary, ext = "png", folder = "launches") {
   if (!isSupabaseStorageConfigured()) {
     return "";
   }
   const cleanExt = String(ext || "png").toLowerCase().replace(/[^a-z0-9]/g, "") || "png";
-  const objectPath = `launches/${Date.now()}-${Math.random().toString(16).slice(2, 10)}.${cleanExt}`;
-  const contentType = cleanExt === "jpg" ? "image/jpeg" : `image/${cleanExt}`;
+  const cleanFolder = String(folder || "launches").toLowerCase().replace(/[^a-z0-9/_-]/g, "") || "launches";
+  const objectPath = `${cleanFolder}/${Date.now()}-${Math.random().toString(16).slice(2, 10)}.${cleanExt}`;
+  const contentType = UPLOAD_CONTENT_TYPES[cleanExt] || "application/octet-stream";
   const headers = {
     apikey: SUPABASE_SERVICE_ROLE_KEY,
     Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
@@ -874,6 +891,10 @@ async function uploadImageToSupabaseStorage(binary, ext = "png") {
     }
   }
   return getSupabaseStoragePublicUrl(objectPath);
+}
+
+async function uploadImageToSupabaseStorage(binary, ext = "png") {
+  return uploadBinaryToSupabaseStorage(binary, ext, "launches");
 }
 
 async function supabaseRequest(relativePath, { method = "GET", query = null, body = null, prefer = "" } = {}) {
@@ -1299,6 +1320,8 @@ function normalizeAlphaTip(row = {}) {
       : "medium",
     teaser: sanitizeAlphaText(row.teaser || row.summary || "", 240),
     body,
+    evidenceUrl: String(row.evidenceUrl || row.mediaUrl || "").trim().slice(0, 1024),
+    evidenceType: sanitizeAlphaText(row.evidenceType || row.mediaType || "", 80),
     author,
     authorName: sanitizeAlphaText(row.authorName || row.xHandle || "", 80),
     authorWallet,
@@ -1342,6 +1365,8 @@ function alphaPublicTip(tip = {}, options = {}) {
     confidence: tip.confidence,
     teaser: tip.teaser,
     body: tip.body || "",
+    evidenceUrl: tip.evidenceUrl || "",
+    evidenceType: tip.evidenceType || "",
     author: tip.author,
     authorName: tip.authorName,
     authorWallet: tip.authorWallet,
@@ -3767,6 +3792,68 @@ app.post("/api/upload-image", async (req, res) => {
     res.json({ url: `/uploads/${filename}` });
   } catch (error) {
     res.status(500).json({ error: error.message || "Failed to upload image" });
+  }
+});
+
+app.post("/api/upload-file", async (req, res) => {
+  try {
+    const dataUrl = String(req.body?.dataUrl || "");
+    const match = dataUrl.match(/^data:([a-zA-Z0-9.+/-]+);base64,(.+)$/);
+    if (!match) {
+      return res.status(400).json({ error: "Invalid file encoding" });
+    }
+
+    const mime = match[1].toLowerCase();
+    const mimeToExt = {
+      "image/png": "png",
+      "image/jpeg": "jpg",
+      "image/webp": "webp",
+      "image/gif": "gif",
+      "image/svg+xml": "svg",
+      "application/pdf": "pdf",
+      "text/plain": "txt",
+      "text/csv": "csv",
+      "application/json": "json",
+      "video/mp4": "mp4",
+      "video/webm": "webm",
+      "video/quicktime": "mov"
+    };
+    const ext = mimeToExt[mime] || "";
+    if (!ext) {
+      return res.status(400).json({ error: "Unsupported evidence file format" });
+    }
+
+    const binary = Buffer.from(match[2], "base64");
+    if (binary.length === 0 || binary.length > 2 * 1024 * 1024) {
+      return res.status(400).json({ error: "Evidence file must be between 1 byte and 2 MB" });
+    }
+
+    if (isSupabaseStorageConfigured()) {
+      try {
+        const storageUrl = await uploadBinaryToSupabaseStorage(binary, ext, "alpha");
+        if (storageUrl) {
+          return res.json({ url: storageUrl, mime });
+        }
+      } catch (uploadError) {
+        if (STRICT_UPLOAD_STORE) {
+          throw uploadError;
+        }
+      }
+    }
+
+    if (!USE_DISK_UPLOADS) {
+      if (STRICT_UPLOAD_STORE) {
+        return res.status(500).json({ error: "File storage is not configured on this deployment" });
+      }
+      return res.json({ url: dataUrl, mime });
+    }
+
+    const filename = `${Date.now()}-${Math.random().toString(16).slice(2, 10)}.${ext}`;
+    const filepath = path.join(UPLOADS_DIR, filename);
+    fs.writeFileSync(filepath, binary);
+    res.json({ url: `/uploads/${filename}`, mime });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to upload file" });
   }
 });
 

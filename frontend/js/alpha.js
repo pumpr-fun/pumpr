@@ -34,6 +34,11 @@ const ui = {
   title: document.getElementById("alphaTitle"),
   teaser: document.getElementById("alphaTeaser"),
   body: document.getElementById("alphaBody"),
+  evidenceFile: document.getElementById("alphaEvidenceFile"),
+  evidenceChoose: document.getElementById("alphaEvidenceChoose"),
+  evidenceName: document.getElementById("alphaEvidenceName"),
+  evidenceUrl: document.getElementById("alphaEvidenceUrl"),
+  evidenceType: document.getElementById("alphaEvidenceType"),
   category: document.getElementById("alphaCategory"),
   confidence: document.getElementById("alphaConfidence"),
   authorWallet: document.getElementById("alphaAuthorWallet"),
@@ -205,6 +210,34 @@ function tokenLinkTarget(tip) {
   return isSolanaChain(tip.chainId) ? ` target="_blank" rel="noreferrer noopener"` : "";
 }
 
+function isImageEvidence(type = "", url = "") {
+  return String(type || "").startsWith("image/") || /\.(png|jpe?g|webp|gif|svg)(\?|#|$)/i.test(String(url || ""));
+}
+
+function renderEvidence(tip) {
+  const url = String(tip.evidenceUrl || "").trim();
+  if (!url) return "";
+  const label = isImageEvidence(tip.evidenceType, url) ? "Evidence image" : "Evidence file";
+  return `
+    <a class="alpha-evidence-card" href="${escapeHtml(url)}" target="_blank" rel="noreferrer noopener">
+      ${isImageEvidence(tip.evidenceType, url)
+        ? `<img src="${escapeHtml(url)}" alt="${escapeHtml(label)}" />`
+        : `<span class="alpha-evidence-file-icon">FILE</span>`}
+      <b>${escapeHtml(label)}</b>
+      <small>Open proof</small>
+    </a>
+  `;
+}
+
+async function fileToDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ""));
+    reader.onerror = () => reject(new Error("Could not read selected file"));
+    reader.readAsDataURL(file);
+  });
+}
+
 function authorName(tip) {
   return tip?.xHandle ? `@${tip.xHandle}` : tip?.authorName || defaultUsername(tip?.author || tip?.authorWallet || "");
 }
@@ -328,6 +361,7 @@ function renderTipCard(tip) {
         </div>
       </div>
       <div class="alpha-body">${escapeHtml(tip.body || "").replace(/\n/g, "<br />")}</div>
+      ${renderEvidence(tip)}
       <div class="alpha-card-foot">
         <span>👍 ${compact(tip.upvotes || 0)}</span>
         <span>👎 ${compact(tip.downvotes || 0)}</span>
@@ -425,6 +459,16 @@ async function submitAlpha(event) {
     throw new Error(isSolanaChain(chainId) ? "Enter a valid Solana token mint address" : "Enter a valid token contract address");
   }
   if (!ethers.isAddress(authorWallet)) throw new Error("Enter a valid tip wallet address");
+  let evidenceUrl = String(ui.evidenceUrl?.value || "").trim();
+  let evidenceType = String(ui.evidenceType?.value || "").trim();
+  const evidenceFile = ui.evidenceFile?.files?.[0] || null;
+  if (evidenceFile && !evidenceUrl) {
+    if (evidenceFile.size > 2 * 1024 * 1024) throw new Error("Evidence file must be 2 MB or smaller");
+    setAlert(ui.alert, "Uploading alpha evidence...");
+    const upload = await api.uploadFile(await fileToDataUrl(evidenceFile));
+    evidenceUrl = upload?.url || "";
+    evidenceType = upload?.mime || evidenceFile.type || "";
+  }
   await api.createAlphaTip({
     projectName: ui.projectName.value,
     tokenSymbol: ui.tokenSymbol.value,
@@ -433,6 +477,8 @@ async function submitAlpha(event) {
     title: ui.title.value,
     teaser: ui.teaser.value,
     body: ui.body.value,
+    evidenceUrl,
+    evidenceType,
     category: ui.category.value || "Intel",
     confidence: ui.confidence.value || "medium",
     author: ws.address,
@@ -442,6 +488,7 @@ async function submitAlpha(event) {
   });
   closeModal(ui.submitModal);
   ui.submitForm.reset();
+  if (ui.evidenceName) ui.evidenceName.textContent = "No evidence selected";
   renderXStatus();
   await loadAlpha();
   setAlert(ui.alert, "Alpha published");
@@ -534,6 +581,13 @@ function bindEvents() {
   });
   ui.submitClose?.addEventListener("click", () => closeModal(ui.submitModal));
   ui.submitCancel.forEach((button) => button.addEventListener("click", () => closeModal(ui.submitModal)));
+  ui.evidenceChoose?.addEventListener("click", () => ui.evidenceFile?.click());
+  ui.evidenceFile?.addEventListener("change", () => {
+    const file = ui.evidenceFile?.files?.[0] || null;
+    if (ui.evidenceName) ui.evidenceName.textContent = file ? `${file.name} (${compact(file.size)} bytes)` : "No evidence selected";
+    if (ui.evidenceUrl) ui.evidenceUrl.value = "";
+    if (ui.evidenceType) ui.evidenceType.value = file?.type || "";
+  });
   ui.submitForm?.addEventListener("submit", (event) => {
     submitAlpha(event).catch((error) => setAlert(ui.alert, parseUiError(error), true));
   });

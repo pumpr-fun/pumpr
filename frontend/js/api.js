@@ -130,5 +130,6 @@ export const api = {
   supportMessages: (address) => apiGet(`/api/support/messages?address=${encodeURIComponent(String(address || ""))}`),
   supportInbox: (address) => apiGet(`/api/support/inbox?address=${encodeURIComponent(String(address || ""))}`),
   sendSupportMessage: (body = {}) => apiPost("/api/support/message", body),
-  uploadImage: (dataUrl) => apiPost("/api/upload-image", { dataUrl })
+  uploadImage: (dataUrl) => apiPost("/api/upload-image", { dataUrl }),
+  uploadFile: (dataUrl) => apiPost("/api/upload-file", { dataUrl })
 };

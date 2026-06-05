@@ -1205,6 +1205,51 @@
   font-size: 0.98rem;
 }
 
+.alpha-evidence-card {
+  display: grid;
+  grid-template-columns: 76px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  border: 1px solid rgba(125, 255, 199, 0.2);
+  border-radius: 10px;
+  background:
+    linear-gradient(135deg, rgba(125, 255, 199, 0.1), rgba(141, 178, 255, 0.08)),
+    rgba(8, 10, 18, 0.48);
+  color: #f4f7ff;
+  padding: 0.58rem;
+  text-decoration: none;
+}
+
+.alpha-evidence-card img,
+.alpha-evidence-file-icon {
+  width: 76px;
+  height: 58px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: #0f1625;
+  border: 1px solid rgba(141, 178, 255, 0.2);
+}
+
+.alpha-evidence-file-icon {
+  display: grid;
+  place-items: center;
+  color: #7dffc7;
+  font-size: 0.72rem;
+  font-weight: 900;
+}
+
+.alpha-evidence-card b,
+.alpha-evidence-card small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.alpha-evidence-card small {
+  color: #9fb0dc;
+  font-weight: 800;
+}
+
 .alpha-lock-panel {
   border: 1px dashed rgba(174, 184, 215, 0.34);
   border-radius: 8px;
@@ -1516,6 +1561,29 @@
 .alpha-tip-modal input:focus {
   border-color: rgba(125, 255, 199, 0.62);
   box-shadow: 0 0 0 3px rgba(125, 255, 199, 0.1);
+}
+
+.alpha-evidence-upload {
+  border: 1px solid rgba(125, 255, 199, 0.2);
+  border-radius: 14px;
+  background:
+    radial-gradient(90% 120% at 0% 0%, rgba(125, 255, 199, 0.11), transparent 48%),
+    #151d2e;
+  padding: 0.9rem;
+}
+
+.alpha-evidence-copy,
+.alpha-evidence-upload > span:last-child {
+  color: #aeb8d7;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.alpha-evidence-upload .btn-ghost {
+  justify-self: start;
+  border-radius: 10px;
+  background: #1a2234;
+  border-color: rgba(141, 178, 255, 0.3);
 }
 
 .alpha-modal-card textarea {

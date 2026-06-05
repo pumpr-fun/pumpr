@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260605alpha4" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260605alpha5" />
   </head>
   <body>
     <div class="app-shell">
@@ -143,6 +143,14 @@
         <label>Title<input id="alphaTitle" maxlength="120" placeholder="What is the alpha?" required /></label>
         <label>Teaser<textarea id="alphaTeaser" maxlength="240" rows="3" placeholder="Short preview for the feed" required></textarea></label>
         <label>Full alpha<textarea id="alphaBody" maxlength="2200" rows="8" placeholder="Full alpha tip, reasoning, risks, and what to watch" required></textarea></label>
+        <label class="alpha-evidence-upload">Evidence file
+          <span class="alpha-evidence-copy">Upload a chart, screenshot, PDF, or short clip that backs up the alpha.</span>
+          <input id="alphaEvidenceFile" class="visually-hidden" type="file" accept="image/*,application/pdf,text/plain,text/csv,application/json,video/mp4,video/webm,video/quicktime" />
+          <button id="alphaEvidenceChoose" class="btn-ghost" type="button">Choose evidence</button>
+          <span id="alphaEvidenceName">No evidence selected</span>
+        </label>
+        <input id="alphaEvidenceUrl" hidden />
+        <input id="alphaEvidenceType" hidden />
         <div class="alpha-modal-grid">
           <label>Category<input id="alphaCategory" maxlength="32" placeholder="Catalyst, wallet flow, listing..." /></label>
           <label>Confidence<select id="alphaConfidence"><option value="high">High</option><option value="medium">Medium</option><option value="low">Low</option></select></label>
@@ -177,6 +185,6 @@
     </div>
 
     <div id="alert" class="alert" role="status"></div>
-    <script type="module" src="/js/alpha.js?v=20260605alpha4"></script>
+    <script type="module" src="/js/alpha.js?v=20260605alpha5"></script>
   </body>
 </html>
