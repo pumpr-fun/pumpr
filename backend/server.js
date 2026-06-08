@@ -5,8 +5,6 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const { ethers } = require("ethers");
-const { Connection: SolanaConnection, Keypair: SolanaKeypair, PublicKey: SolanaPublicKey, Transaction: SolanaTransaction } = require("@solana/web3.js");
-const { PUMP_SDK } = require("@pump-fun/pump-sdk");
 
 dotenv.config({ override: true });
 
@@ -42,6 +40,30 @@ const STRICT_SOCIAL_STORE = String(process.env.STRICT_SOCIAL_STORE || (STRICT_PR
 const STRICT_UPLOAD_STORE = String(process.env.STRICT_UPLOAD_STORE || "0") === "1";
 // Vercel runtime filesystem is ephemeral/read-only for project paths. Force inline mode there.
 const USE_DISK_UPLOADS = !IS_VERCEL_RUNTIME && UPLOAD_MODE !== "inline";
+
+let solanaWeb3Promise = null;
+let pumpSdkPromise = null;
+
+async function loadSolanaWeb3() {
+  if (!solanaWeb3Promise) {
+    solanaWeb3Promise = import("@solana/web3.js");
+  }
+  const mod = await solanaWeb3Promise;
+  return {
+    Connection: mod.Connection,
+    Keypair: mod.Keypair,
+    PublicKey: mod.PublicKey,
+    Transaction: mod.Transaction
+  };
+}
+
+async function loadPumpFunSdk() {
+  if (!pumpSdkPromise) {
+    pumpSdkPromise = import("@pump-fun/pump-sdk");
+  }
+  const mod = await pumpSdkPromise;
+  return mod.PUMP_SDK || mod.default?.PUMP_SDK || mod.default;
+}
 
 const FACTORY_ARTIFACT = require(path.join(ROOT, "artifacts", "contracts", "MemeLaunchFactory.sol", "MemeLaunchFactory.json"));
 const POOL_ARTIFACT = require(path.join(ROOT, "artifacts", "contracts", "MemePool.sol", "MemePool.json"));
@@ -1937,6 +1959,7 @@ function officialAirdropConfig() {
 }
 
 async function buildSolanaAirdropPreview(rawToken, limit = 20) {
+  const { Connection: SolanaConnection, PublicKey: SolanaPublicKey } = await loadSolanaWeb3();
   const mintText = String(rawToken || "").trim();
   let mint;
   try {
@@ -3889,6 +3912,17 @@ app.get("/api/pumpfun/metadata/:id", (req, res) => {
 
 app.post("/api/pumpfun/launch", async (req, res) => {
   try {
+    const {
+      Connection: SolanaConnection,
+      Keypair: SolanaKeypair,
+      PublicKey: SolanaPublicKey,
+      Transaction: SolanaTransaction
+    } = await loadSolanaWeb3();
+    const PUMP_SDK = await loadPumpFunSdk();
+    if (!PUMP_SDK?.createV2Instruction) {
+      return res.status(500).json({ error: "Pump.fun SDK is not available in this runtime" });
+    }
+
     const name = String(req.body?.name || "").trim().slice(0, 32);
     const symbol = String(req.body?.symbol || "").trim().toUpperCase().slice(0, 13);
     if (!name || !symbol) {
