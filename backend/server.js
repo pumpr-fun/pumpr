@@ -121,7 +121,7 @@ const CHAIN_META = {
     shortName: "SOL",
     nativeCurrency: "SOL",
     explorerBaseUrl: "https://solscan.io",
-    rpcUrls: ["https://api.mainnet-beta.solana.com"],
+    rpcUrls: ["https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/"],
     dexRouter: ethers.ZeroAddress
   },
   11155111: {
@@ -645,6 +645,13 @@ function pickRpcUrls(chainId) {
   if (chainId === 143) {
     pushIf(process.env.MONAD_RPC_URL);
     pushIf("https://rpc.monad.xyz");
+    return urls;
+  }
+
+  if (chainId === 101) {
+    pushIf(process.env.SOLANA_RPC_URL);
+    pushIf(process.env.PUMPFUN_SOLANA_RPC_URL);
+    pushIf("https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/");
     return urls;
   }
 

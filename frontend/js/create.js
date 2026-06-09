@@ -1408,20 +1408,7 @@ function base64ToBytes(value = "") {
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   const solanaWeb3 = await loadSolanaWeb3();
-  const rpcUrl = "https://api.mainnet-beta.solana.com";
-  const connection = new solanaWeb3.Connection(rpcUrl, "confirmed");
-  const minimumLamports = 0.003 * 1_000_000_000;
-  let lamports = null;
-  try {
-    lamports = await connection.getBalance(new solanaWeb3.PublicKey(publicKey), "confirmed");
-  } catch {
-    lamports = null;
-  }
-  if (typeof lamports === "number" && lamports > 0 && lamports < minimumLamports) {
-    throw new Error(`Pump.fun launch needs a little SOL for network and launch fees. Wallet ${publicKey.slice(0, 4)}...${publicKey.slice(-4)} shows ${(lamports / 1_000_000_000).toFixed(4)} SOL; add a bit more and retry.`);
-  }
   setAlert(ui.alert, "Preparing official Pump.fun SDK transaction...");
-  const latest = await connection.getLatestBlockhash("confirmed");
   const payload = await api.pumpfunLaunch({
     name: details.name,
     symbol: details.symbol,
@@ -1432,8 +1419,6 @@ async function launchPumpFun(details) {
     starterBuy: details.starterBuyEth?.toString?.() || "0",
     creatorWallet: details.pumpfunCreatorWallet || publicKey,
     userPublicKey: publicKey,
-    blockhash: latest.blockhash,
-    lastValidBlockHeight: latest.lastValidBlockHeight,
     source: "Pump-r"
   });
   const mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
@@ -1448,6 +1433,8 @@ async function launchPumpFun(details) {
     const sent = await provider.signAndSendTransaction(transaction);
     signature = sent?.signature || String(sent || "");
   } else if (typeof provider.signTransaction === "function") {
+    const rpcUrl = String(payload?.rpcUrl || "https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/");
+    const connection = new solanaWeb3.Connection(rpcUrl, "confirmed");
     const signed = await provider.signTransaction(transaction);
     signature = await connection.sendRawTransaction(signed.serialize(), { skipPreflight: false });
     await connection.confirmTransaction(

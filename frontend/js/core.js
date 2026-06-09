@@ -102,7 +102,7 @@ export const CHAIN_OPTIONS = {
     name: "Solana",
     shortName: "SOL",
     nativeCurrency: { name: "Solana", symbol: "SOL", decimals: 9 },
-    rpcUrls: ["https://api.mainnet-beta.solana.com"],
+    rpcUrls: ["https://sparkling-blue-sponge.solana-mainnet.quiknode.pro/1a7f99d93cb6940285e9a095de8fc546c3c76d35/"],
     blockExplorerUrls: ["https://solscan.io"]
   }
 };
