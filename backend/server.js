@@ -1555,22 +1555,88 @@ function sanitizeAlphaStore(store) {
   };
 }
 
+function isLegacyEtherpumpAlphaTip(tip = {}) {
+  const haystack = [
+    tip.id,
+    tip.title,
+    tip.projectName,
+    tip.tokenSymbol,
+    tip.tokenAddress,
+    tip.xHandle
+  ]
+    .map((value) => String(value || "").toLowerCase())
+    .join(" ");
+  return (
+    haystack.includes("etherpump taking over") ||
+    haystack.includes("epump") ||
+    haystack.includes("92tnfen3brvbbmeh35xxm96bz9x9pedqsiweneqwpump")
+  );
+}
+
+function defaultPumpRemasteredAlphaTip() {
+  return normalizeAlphaTip({
+    id: "alpha-pump-fun-remastered",
+    title: "PUMP FUN REMASTERED IS LIVE",
+    projectName: "Pump Fun Remastered",
+    tokenSymbol: "PUMPR",
+    tokenAddress: "So11111111111111111111111111111111111111112",
+    chainId: 101,
+    minBalance: "0",
+    category: "Launchpad, Solana, Ethereum, Base, Monad",
+    confidence: "high",
+    teaser: "Official Pump Fun Remastered account is live at @pumpr_fun.",
+    body:
+      "Pump Fun Remastered is building a multi-chain launchpad flow across Solana, Ethereum, Base, and Monad. The signal to watch is the official @pumpr_fun account, upcoming PUMPR token rollout, Pump.fun launch support, PumpVerse multi-chain launches, Alpha, GO bounties, and holder reward tooling all coming together under one launch ecosystem.",
+    evidenceUrl: "https://x.com/pumpr_fun",
+    evidenceType: "X profile",
+    author: ethers.ZeroAddress,
+    authorWallet: ethers.ZeroAddress,
+    authorName: "Pump Fun Remastered",
+    xHandle: "pumpr_fun",
+    xName: "Pump Fun Remastered",
+    xImage: "/assets/pump-r-logo.png?v=20260608r",
+    xFollowers: 110,
+    upvotes: ["0x0000000000000000000000000000000000000001"],
+    downvotes: [],
+    comments: [],
+    tips: [],
+    unlocks: [],
+    createdAt: 1781035200
+  });
+}
+
+function applyAlphaSystemTips(store = {}) {
+  const safe = sanitizeAlphaStore(store);
+  const tips = (safe.tips || []).filter((tip) => !isLegacyEtherpumpAlphaTip(tip));
+  const hasPumpRemastered = tips.some((tip) => {
+    const symbol = String(tip.tokenSymbol || "").toUpperCase();
+    const handle = String(tip.xHandle || "").toLowerCase();
+    const title = String(tip.title || "").toLowerCase();
+    return symbol === "PUMPR" || handle === "pumpr_fun" || title.includes("pump fun remastered");
+  });
+  if (!hasPumpRemastered) {
+    const seeded = defaultPumpRemasteredAlphaTip();
+    if (seeded) tips.unshift(seeded);
+  }
+  return sanitizeAlphaStore({ ...safe, tips });
+}
+
 function readAlphaDb() {
   if (alphaDbCache && typeof alphaDbCache === "object") return alphaDbCache;
   try {
     if (fs.existsSync(ALPHA_DB_PATH)) {
-      alphaDbCache = sanitizeAlphaStore(JSON.parse(fs.readFileSync(ALPHA_DB_PATH, "utf8") || "{}"));
+      alphaDbCache = applyAlphaSystemTips(JSON.parse(fs.readFileSync(ALPHA_DB_PATH, "utf8") || "{}"));
       return alphaDbCache;
     }
   } catch {
     // fall through
   }
-  alphaDbCache = emptyAlphaStore();
+  alphaDbCache = applyAlphaSystemTips(emptyAlphaStore());
   return alphaDbCache;
 }
 
 function writeAlphaDb(store) {
-  const safe = sanitizeAlphaStore(store);
+  const safe = applyAlphaSystemTips(store);
   fs.mkdirSync(path.dirname(ALPHA_DB_PATH), { recursive: true });
   fs.writeFileSync(ALPHA_DB_PATH, JSON.stringify(safe, null, 2));
   alphaDbCache = safe;
@@ -1591,7 +1657,7 @@ async function readAlphaDbRemote() {
     const text = await response.text().catch(() => "");
     throw new Error(`Supabase alpha read failed: ${response.status} ${text}`.trim());
   }
-  return sanitizeAlphaStore(await response.json().catch(() => emptyAlphaStore()));
+  return applyAlphaSystemTips(await response.json().catch(() => emptyAlphaStore()));
 }
 
 async function writeAlphaDbRemote(store) {
@@ -1605,7 +1671,7 @@ async function writeAlphaDbRemote(store) {
       "Content-Type": "application/json; charset=utf-8",
       "x-upsert": "true"
     },
-    body: JSON.stringify(sanitizeAlphaStore(store), null, 2)
+    body: JSON.stringify(applyAlphaSystemTips(store), null, 2)
   });
   if (!response.ok) {
     const text = await response.text().catch(() => "");
@@ -1629,7 +1695,7 @@ async function readAlphaDbPersistent(options = {}) {
       alphaDbRemoteLoaded = true;
     }
   }
-  return sanitizeAlphaStore(readAlphaDb());
+  return applyAlphaSystemTips(readAlphaDb());
 }
 
 async function writeAlphaDbPersistent(store) {
