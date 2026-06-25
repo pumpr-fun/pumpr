@@ -388,12 +388,28 @@ function renderFeed() {
   renderStats();
 }
 
+function activeWalletAddress() {
+  const ws = walletState();
+  return String(ws.address || ws.solanaAddress || "").trim();
+}
+
+function hasActiveWallet() {
+  return Boolean(activeWalletAddress());
+}
+
+function isValidTipWallet(value = "") {
+  const text = String(value || "").trim();
+  return ethers.isAddress(text) || isLikelySolanaAddress(text);
+}
+
 function updateProfileLinks() {
   const ws = walletState();
-  const connected = Boolean(ws.signer && ws.address);
-  if (ui.profileNavSide) ui.profileNavSide.href = connected ? `/profile?address=${ws.address}` : "/profile";
-  if (ui.signInBtn) ui.signInBtn.textContent = connected ? shortAddress(ws.address) : "Sign in";
-  if (ui.walletLabel) setWalletLabel(ui.walletLabel, ws.address);
+  const address = activeWalletAddress();
+  const evmConnected = Boolean(ws.signer && ws.address);
+  const connected = Boolean(address);
+  if (ui.profileNavSide) ui.profileNavSide.href = evmConnected ? `/profile?address=${ws.address}` : "/profile";
+  if (ui.signInBtn) ui.signInBtn.textContent = connected ? shortAddress(address) : "Sign in";
+  if (ui.walletLabel) setWalletLabel(ui.walletLabel);
 }
 
 async function initWallet() {
@@ -403,10 +419,11 @@ async function initWallet() {
     disconnectBtn: ui.disconnectBtn,
     labelEl: ui.walletLabel,
     alertEl: ui.alert,
-    onConnected: updateProfileLinks
+    onConnected: updateProfileLinks,
+    onDisconnected: updateProfileLinks
   });
   ui.signInBtn?.addEventListener("click", async () => {
-    if (walletState().signer) return;
+    if (hasActiveWallet()) return;
     await state.walletControls?.connect();
     updateProfileLinks();
   });
@@ -414,11 +431,21 @@ async function initWallet() {
 }
 
 async function ensureConnected() {
-  if (walletState().signer && walletState().address) return walletState();
+  if (hasActiveWallet()) return { ...walletState(), address: activeWalletAddress() };
   await state.walletControls?.connect();
   const ws = walletState();
-  if (!ws.signer || !ws.address) throw new Error("Connect wallet first");
-  return ws;
+  const address = activeWalletAddress();
+  if (!address) throw new Error("Connect wallet first");
+  return { ...ws, address };
+}
+
+async function ensureEvmConnected() {
+  const ws = walletState();
+  if (ws.signer && ws.address) return ws;
+  await state.walletControls?.connect();
+  const next = walletState();
+  if (!next.signer || !next.address) throw new Error("Connect an EVM wallet to send tips");
+  return next;
 }
 
 async function ensureXConnected() {
@@ -434,8 +461,8 @@ async function loadAlpha() {
 }
 
 function fillSubmitDefaults() {
-  const ws = walletState();
-  if (ui.authorWallet && !ui.authorWallet.value && ws.address) ui.authorWallet.value = ws.address;
+  const address = activeWalletAddress();
+  if (ui.authorWallet && !ui.authorWallet.value && address) ui.authorWallet.value = address;
 }
 
 function requestXAuthorization() {
@@ -452,7 +479,7 @@ async function submitAlpha(event) {
   if (!isValidTokenAddressForChain(String(ui.tokenAddress?.value || ""), chainId)) {
     throw new Error(isSolanaChain(chainId) ? "Enter a valid Solana token mint address" : "Enter a valid token contract address");
   }
-  if (!ethers.isAddress(authorWallet)) throw new Error("Enter a valid tip wallet address");
+  if (!isValidTipWallet(authorWallet)) throw new Error("Enter a valid tip wallet address");
   let evidenceUrl = String(ui.evidenceUrl?.value || "").trim();
   let evidenceType = String(ui.evidenceType?.value || "").trim();
   const evidenceFile = ui.evidenceFile?.files?.[0] || null;
@@ -507,11 +534,11 @@ async function sendTip(event) {
   event.preventDefault();
   const tip = state.activeTip;
   if (!tip?.id) return;
-  const ws = await ensureConnected();
+  const ws = await ensureEvmConnected();
   const amount = String(ui.tipAmount?.value || "").trim();
   const tipChainId = tipChainIdForAlpha(tip);
   if (!(Number(amount) > 0)) throw new Error("Enter a tip amount");
-  if (!ethers.isAddress(tip.authorWallet)) throw new Error("Author tip wallet is invalid");
+  if (!ethers.isAddress(tip.authorWallet)) throw new Error("This author has a Solana tip wallet. Connect an EVM wallet only for EVM tip wallets.");
   await ensureWalletChain(tipChainId);
   setAlert(ui.alert, `Sending ${amount} ${nativeSymbol(tipChainId)} tip...`);
   const tx = await walletState().signer.sendTransaction({

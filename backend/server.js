@@ -1456,6 +1456,16 @@ function normalizeAlphaTokenAddress(value = "", chainId = 1) {
   return isSolanaAlphaChain(chainId) ? normalizeSolanaAddress(value) : normalizeAddress(value);
 }
 
+function normalizeAlphaWallet(value = "") {
+  return normalizeAddress(value) || normalizeSolanaAddress(value);
+}
+
+function normalizeAlphaIdentityKey(value = "") {
+  const evm = normalizeAddress(value);
+  if (evm) return evm.toLowerCase();
+  return normalizeSolanaAddress(value);
+}
+
 function normalizeAlphaId(value = "") {
   return sanitizeAlphaText(value || `alpha-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`, 90)
     .toLowerCase()
@@ -1469,13 +1479,13 @@ function normalizeAlphaTip(row = {}) {
   const chainId = parseChainId(row.chainId || 1) || 1;
   const tokenAddress = normalizeAlphaTokenAddress(row.tokenAddress || row.token || "", chainId);
   if (!id || !title || !body || !tokenAddress) return null;
-  const author = normalizeAddress(row.author || row.address || "") || ethers.ZeroAddress;
-  const authorWallet = normalizeAddress(row.authorWallet || row.tipWallet || author || "") || ethers.ZeroAddress;
+  const author = normalizeAlphaWallet(row.author || row.address || "") || ethers.ZeroAddress;
+  const authorWallet = normalizeAlphaWallet(row.authorWallet || row.tipWallet || author || "") || ethers.ZeroAddress;
   const minBalance = sanitizeAlphaText(row.minBalance || row.requiredBalance || "1", 40) || "1";
   const tips = Array.isArray(row.tips) ? row.tips : [];
-  const unlocks = Array.isArray(row.unlocks) ? row.unlocks.map(normalizeAddress).filter(Boolean) : [];
-  const upvotes = Array.isArray(row.upvotes) ? row.upvotes.map(normalizeAddress).filter(Boolean) : [];
-  const downvotes = Array.isArray(row.downvotes) ? row.downvotes.map(normalizeAddress).filter(Boolean) : [];
+  const unlocks = Array.isArray(row.unlocks) ? row.unlocks.map(normalizeAlphaIdentityKey).filter(Boolean) : [];
+  const upvotes = Array.isArray(row.upvotes) ? row.upvotes.map(normalizeAlphaIdentityKey).filter(Boolean) : [];
+  const downvotes = Array.isArray(row.downvotes) ? row.downvotes.map(normalizeAlphaIdentityKey).filter(Boolean) : [];
   const comments = Array.isArray(row.comments) ? row.comments : [];
   return {
     id,
@@ -1502,7 +1512,7 @@ function normalizeAlphaTip(row = {}) {
     xFollowers: Math.max(0, Number(row.xFollowers || 0) || 0),
     tips: tips
       .map((tip) => ({
-        from: normalizeAddress(tip?.from || tip?.address || "") || ethers.ZeroAddress,
+        from: normalizeAlphaWallet(tip?.from || tip?.address || "") || ethers.ZeroAddress,
         txHash: sanitizeAlphaText(tip?.txHash || "", 120),
         amount: sanitizeAlphaText(tip?.amount || "0", 40),
         chainId: parseChainId(tip?.chainId || chainId) || chainId,
@@ -1510,13 +1520,13 @@ function normalizeAlphaTip(row = {}) {
       }))
       .filter((tip) => tip.txHash || Number(tip.amount || 0) > 0)
       .slice(-500),
-    upvotes: [...new Set(upvotes.map((address) => address.toLowerCase()))].slice(-2000),
-    downvotes: [...new Set(downvotes.map((address) => address.toLowerCase()))].slice(-2000),
+    upvotes: [...new Set(upvotes)].slice(-2000),
+    downvotes: [...new Set(downvotes)].slice(-2000),
     comments: comments
       .map((comment) => normalizeAlphaComment(comment, id))
       .filter(Boolean)
       .slice(-500),
-    unlocks: [...new Set(unlocks.map((address) => address.toLowerCase()))].slice(-1000),
+    unlocks: [...new Set(unlocks)].slice(-1000),
     createdAt: Number(row.createdAt || Math.floor(Date.now() / 1000))
   };
 }
@@ -1557,7 +1567,7 @@ function alphaPublicTip(tip = {}, options = {}) {
 }
 
 function normalizeAlphaComment(row = {}, tipId = "") {
-  const author = normalizeAddress(row.author || row.address || "");
+  const author = normalizeAlphaWallet(row.author || row.address || "");
   const body = sanitizeAlphaText(row.body || "", 260);
   if (!author || !body) return null;
   return {
@@ -7342,9 +7352,9 @@ app.post("/api/alpha", async (req, res) => {
       throw new Error(isSolanaAlphaChain(chainId) ? "valid Solana token mint is required" : "token address is required");
     }
     if (!isSolanaAlphaChain(chainId) && tokenAddress === ethers.ZeroAddress) throw new Error("token address cannot be the zero address");
-    const author = normalizeAddress(body.author || body.address || "");
+    const author = normalizeAlphaWallet(body.author || body.address || "");
     if (!author) throw new Error("author wallet is required");
-    const authorWallet = normalizeAddress(body.authorWallet || body.tipWallet || author || "");
+    const authorWallet = normalizeAlphaWallet(body.authorWallet || body.tipWallet || author || "");
     if (!authorWallet) throw new Error("tip wallet is required");
     const xHandle = normalizeXHandle(body.xHandle || "");
     if (!xHandle) throw new Error("Connect X before submitting alpha");
@@ -7384,7 +7394,7 @@ app.post("/api/alpha", async (req, res) => {
 app.post("/api/alpha/:id/vote", async (req, res) => {
   try {
     const id = normalizeAlphaId(req.params.id || "");
-    const voter = normalizeAddress(req.body?.address || req.body?.voter || "");
+    const voter = normalizeAlphaIdentityKey(req.body?.address || req.body?.voter || "");
     const direction = String(req.body?.direction || "").toLowerCase();
     if (!voter) throw new Error("voter address is required");
     if (!["up", "down", "clear"].includes(direction)) throw new Error("vote direction is required");
@@ -7392,9 +7402,9 @@ app.post("/api/alpha/:id/vote", async (req, res) => {
     const index = (store.tips || []).findIndex((row) => normalizeAlphaId(row?.id || "") === id);
     if (index < 0) throw new Error("alpha tip not found");
     const tip = normalizeAlphaTip(store.tips[index]);
-    const key = voter.toLowerCase();
-    const upvotes = new Set((tip.upvotes || []).map((row) => String(row).toLowerCase()));
-    const downvotes = new Set((tip.downvotes || []).map((row) => String(row).toLowerCase()));
+    const key = voter;
+    const upvotes = new Set((tip.upvotes || []).map(normalizeAlphaIdentityKey).filter(Boolean));
+    const downvotes = new Set((tip.downvotes || []).map(normalizeAlphaIdentityKey).filter(Boolean));
     upvotes.delete(key);
     downvotes.delete(key);
     if (direction === "up") upvotes.add(key);
