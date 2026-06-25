@@ -71,6 +71,7 @@ const ui = {
   launchPumpVerseOptions: document.getElementById("launchPumpVerseOptions"),
   launchChainLabel: document.getElementById("launchChainLabel"),
   launchChainHint: document.getElementById("launchChainHint"),
+  advancedDetails: document.querySelector(".create-advanced"),
   createForm: document.getElementById("createForm"),
   launchSubmitBtn: document.getElementById("launchSubmitBtn"),
   name: document.getElementById("name"),
@@ -213,7 +214,11 @@ function requiredMinLiquidityEth(address = walletState().address) {
 function formatHolderAccessMessage(eligibility = {}, action = "launch tokens") {
   const symbol = String(eligibility.symbol || "PUMPR").replace(/^\$/, "").toUpperCase();
   const chain = String(eligibility.chainShortName || eligibility.chainName || "configured chain");
-  return `Hold $${symbol} in your ${chain} wallet to ${action}. 1%+ holders will also be eligible for later airdrops.`;
+  const held = Number(eligibility.balanceTokens || 0);
+  const heldText = Number.isFinite(held) && held > 0
+    ? held.toLocaleString(undefined, { maximumFractionDigits: 6 })
+    : "0";
+  return `You hold ${heldText} $${symbol} on ${chain}. Hold any amount above 0 $${symbol} in this wallet to ${action}. 1%+ holders will also be eligible for later airdrops.`;
 }
 
 async function ensurePumpRHolderAccess({ address = "", solanaAddress = "", action = "launch tokens" } = {}) {
@@ -354,6 +359,10 @@ function renderChainSelector() {
   const quoteOptions = Array.isArray(state.quoteLaunchOptions) ? state.quoteLaunchOptions : [];
   const monadConfigured = supported.has(143);
   const configuredCount = supported.size;
+  if (ui.advancedDetails) {
+    ui.advancedDetails.hidden = isPumpFunMode();
+    if (isPumpFunMode()) ui.advancedDetails.open = false;
+  }
   if (ui.launchChainLabel) {
     ui.launchChainLabel.textContent = isPumpVerseMode()
       ? "PumpVerse"

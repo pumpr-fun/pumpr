@@ -2560,7 +2560,12 @@ async function assertOfficialHolderAccess({ address = "", solanaAddress = "", ac
   }
   const eligibility = await readOfficialHolderEligibility({ address, solanaAddress });
   if (!eligibility.eligibleToLaunch) {
-    throw new Error(`Hold $${eligibility.symbol || "PUMPR"} to ${action}. 1%+ holders will also be eligible for later airdrops.`);
+    const held = Number(eligibility.balanceTokens || 0);
+    const heldText = Number.isFinite(held) && held > 0
+      ? held.toLocaleString(undefined, { maximumFractionDigits: 6 })
+      : "0";
+    const chain = eligibility.chainShortName || eligibility.chainName || "configured chain";
+    throw new Error(`You hold ${heldText} $${eligibility.symbol || "PUMPR"} on ${chain}. Hold any amount above 0 $${eligibility.symbol || "PUMPR"} in this wallet to ${action}. 1%+ holders will also be eligible for later airdrops.`);
   }
   return eligibility;
 }
