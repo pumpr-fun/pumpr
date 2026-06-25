@@ -140,6 +140,12 @@ export const api = {
   pumpfunLaunch: (body = {}) => apiPost("/api/pumpfun/launch", body),
   pumpfunFinalize: (body = {}) => apiPost("/api/pumpfun/finalize", body),
   officialAirdrop: () => apiGet("/api/airdrop/official"),
+  holderEligibility: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.address) params.set("address", String(options.address));
+    if (options.solanaAddress) params.set("solanaAddress", String(options.solanaAddress));
+    return apiGet(`/api/holder/eligibility?${params.toString()}`);
+  },
   airdropPreview: (options = {}) => {
     const params = new URLSearchParams();
     if (options.token) params.set("token", String(options.token));

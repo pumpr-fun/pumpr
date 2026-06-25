@@ -439,12 +439,6 @@ function fillSubmitDefaults() {
 }
 
 function requestXAuthorization() {
-  const ws = walletState();
-  if (!ws.signer || !ws.address) {
-    setAlert(ui.alert, "Connect wallet before authorizing X", true);
-    ui.connectBtn?.click();
-    return;
-  }
   const returnTo = `${window.location.pathname}${window.location.search}${window.location.hash || ""}`;
   window.location.href = `/api/x/oauth/start?returnTo=${encodeURIComponent(returnTo)}`;
 }
@@ -571,11 +565,11 @@ function bindEvents() {
   });
   ui.connectX?.addEventListener("click", requestXAuthorization);
   ui.openSubmit?.addEventListener("click", async () => {
-    await ensureConnected();
     if (!state.xProfile?.username) {
       requestXAuthorization();
       return;
     }
+    await ensureConnected();
     fillSubmitDefaults();
     openModal(ui.submitModal);
   });

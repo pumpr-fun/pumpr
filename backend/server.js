@@ -2010,21 +2010,31 @@ function goEscrowConfig() {
 
 function officialAirdropConfig() {
   const rawToken = String(
-    process.env.AIRDROP_TOKEN_ADDRESS ||
+    process.env.PUMPR_TOKEN_ADDRESS ||
+      process.env.OFFICIAL_PUMPR_TOKEN ||
+      process.env.PUMPFUN_TOKEN_ADDRESS ||
+      process.env.AIRDROP_TOKEN_ADDRESS ||
       process.env.OFFICIAL_AIRDROP_TOKEN ||
       process.env.PUMPR_AIRDROP_TOKEN ||
       process.env.ETHERPUMP_AIRDROP_TOKEN ||
       ""
   ).trim();
   const chainId = parseChainId(
-    process.env.AIRDROP_CHAIN_ID ||
+    process.env.PUMPR_TOKEN_CHAIN_ID ||
+      process.env.OFFICIAL_PUMPR_TOKEN_CHAIN_ID ||
+      process.env.PUMPFUN_TOKEN_CHAIN_ID ||
+      process.env.AIRDROP_CHAIN_ID ||
       process.env.OFFICIAL_AIRDROP_CHAIN_ID ||
       process.env.PUMPR_AIRDROP_CHAIN_ID ||
       process.env.ETHERPUMP_AIRDROP_CHAIN_ID ||
-      "1"
+      "101"
   ) || 1;
   const quoteMode = normalizeQuoteMode(process.env.AIRDROP_QUOTE_MODE || process.env.OFFICIAL_AIRDROP_QUOTE || "native");
   const token = chainId === 101 ? normalizeSolanaAddress(rawToken) : normalizeAddress(rawToken);
+  const minHolderPct = Math.max(
+    0,
+    Number(process.env.PUMPR_AIRDROP_MIN_HOLDER_PCT || process.env.AIRDROP_MIN_HOLDER_PCT || "1") || 1
+  );
   return {
     configured: Boolean(token),
     token,
@@ -2033,12 +2043,137 @@ function officialAirdropConfig() {
     chainShortName: CHAIN_META[chainId]?.shortName || String(chainId),
     quoteMode,
     name: String(process.env.AIRDROP_TOKEN_NAME || process.env.OFFICIAL_AIRDROP_TOKEN_NAME || "Pump-r").trim(),
-    symbol: String(process.env.AIRDROP_TOKEN_SYMBOL || process.env.OFFICIAL_AIRDROP_TOKEN_SYMBOL || "Pump-r").trim().replace(/^\$/, "").toUpperCase(),
+    symbol: String(process.env.AIRDROP_TOKEN_SYMBOL || process.env.OFFICIAL_AIRDROP_TOKEN_SYMBOL || "PUMPR").trim().replace(/^\$/, "").toUpperCase(),
+    minHolderPct,
     message: String(
       process.env.AIRDROP_MESSAGE ||
-        "After the official Pump-r token launches, creator rewards will be routed back to top holders from this page."
+        "Pump-r token holders can launch from the app, receive creator payments, and qualify for later holder airdrops."
     ).trim()
   };
+}
+
+const HOLDER_GATE_ERC20_ABI = [
+  "function balanceOf(address account) view returns (uint256)",
+  "function totalSupply() view returns (uint256)",
+  "function decimals() view returns (uint8)"
+];
+
+function officialHolderGateRequired() {
+  const raw = String(process.env.PUMPR_HOLDER_GATE_REQUIRED || process.env.HOLDER_GATE_REQUIRED || "1").trim().toLowerCase();
+  return !["0", "false", "no", "off"].includes(raw);
+}
+
+function holderPctFromRaw(balanceRaw, supplyRaw) {
+  const balance = BigInt(String(balanceRaw || "0"));
+  const supply = BigInt(String(supplyRaw || "0"));
+  if (balance <= 0n || supply <= 0n) return 0;
+  return Number((balance * 1_000_000n) / supply) / 10_000;
+}
+
+function buildHolderEligibilityPayload(official, row = {}) {
+  const balanceRaw = String(row.balanceRaw || "0");
+  const supplyRaw = String(row.supplyRaw || "0");
+  const balanceFloat = Number(row.balanceTokens || 0) || 0;
+  const holderPct = holderPctFromRaw(balanceRaw, supplyRaw);
+  const hasBalance = BigInt(balanceRaw || "0") > 0n;
+  const minHolderPct = Number(official.minHolderPct || 1);
+  return {
+    configured: Boolean(official.configured),
+    required: officialHolderGateRequired(),
+    token: official.token,
+    chainId: official.chainId,
+    chainName: official.chainName,
+    chainShortName: official.chainShortName,
+    symbol: official.symbol,
+    minHolderPct,
+    balanceRaw,
+    balanceTokens: balanceFloat,
+    supplyRaw,
+    holderPct,
+    eligibleToLaunch: hasBalance,
+    eligibleForAirdrop: hasBalance && holderPct >= minHolderPct
+  };
+}
+
+async function readEvmOfficialHolderEligibility(official, address) {
+  const owner = normalizeAddress(address || "");
+  if (!owner) throw new Error("Connect an EVM wallet that holds the Pump-r token.");
+  const ctx = await getContext(official.chainId, { verify: false, quoteMode: official.quoteMode });
+  const token = new ethers.Contract(official.token, HOLDER_GATE_ERC20_ABI, ctx.provider);
+  const [balanceRaw, supplyRaw, decimalsRaw] = await Promise.all([
+    token.balanceOf(owner),
+    token.totalSupply().catch(() => 0n),
+    token.decimals().catch(() => 18)
+  ]);
+  const decimals = Math.max(0, Math.min(30, Number(decimalsRaw || 18) || 18));
+  return buildHolderEligibilityPayload(official, {
+    balanceRaw: balanceRaw.toString(),
+    supplyRaw: supplyRaw.toString(),
+    balanceTokens: Number(ethers.formatUnits(balanceRaw, decimals)) || 0
+  });
+}
+
+async function readSolanaOfficialHolderEligibility(official, solanaAddress) {
+  const { Connection: SolanaConnection, PublicKey: SolanaPublicKey } = await loadSolanaWeb3();
+  const ownerText = String(solanaAddress || "").trim();
+  if (!ownerText) throw new Error("Connect a Solana wallet that holds the Pump-r token.");
+  let owner;
+  let mint;
+  try {
+    owner = new SolanaPublicKey(ownerText);
+    mint = new SolanaPublicKey(String(official.token || ""));
+  } catch {
+    throw new Error("Valid Solana wallet and Pump-r mint are required.");
+  }
+
+  const rpcUrl = String(process.env.SOLANA_RPC_URL || process.env.PUMPFUN_SOLANA_RPC_URL || CHAIN_META[101].rpcUrls[0]).trim();
+  const connection = new SolanaConnection(rpcUrl, "confirmed");
+  const [accounts, mintInfo] = await Promise.all([
+    connection.getParsedTokenAccountsByOwner(owner, { mint }).catch(() => ({ value: [] })),
+    connection.getParsedAccountInfo(mint).catch(() => ({ value: null }))
+  ]);
+  let balanceRaw = 0n;
+  let balanceTokens = 0;
+  for (const account of accounts?.value || []) {
+    const amount = account?.account?.data?.parsed?.info?.tokenAmount || {};
+    balanceRaw += BigInt(String(amount.amount || "0"));
+    balanceTokens += Number(amount.uiAmountString || amount.uiAmount || 0) || 0;
+  }
+  const mintParsed = mintInfo?.value?.data?.parsed?.info || {};
+  const supplyRaw = BigInt(String(mintParsed.supply || "0"));
+  if (!balanceTokens && balanceRaw > 0n) {
+    const decimals = Number(mintParsed.decimals || 6) || 6;
+    balanceTokens = Number(balanceRaw) / 10 ** decimals;
+  }
+  return buildHolderEligibilityPayload(official, {
+    balanceRaw: balanceRaw.toString(),
+    supplyRaw: supplyRaw.toString(),
+    balanceTokens
+  });
+}
+
+async function readOfficialHolderEligibility({ address = "", solanaAddress = "" } = {}) {
+  const official = officialAirdropConfig();
+  if (!official.configured) {
+    return buildHolderEligibilityPayload(official, { balanceRaw: "0", supplyRaw: "0", balanceTokens: 0 });
+  }
+  if (official.chainId === 101) {
+    return readSolanaOfficialHolderEligibility(official, solanaAddress || address);
+  }
+  return readEvmOfficialHolderEligibility(official, address);
+}
+
+async function assertOfficialHolderAccess({ address = "", solanaAddress = "", action = "launch" } = {}) {
+  if (!officialHolderGateRequired()) return null;
+  const official = officialAirdropConfig();
+  if (!official.configured) {
+    throw new Error("Official Pump-r token is not configured. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling launches or payouts.");
+  }
+  const eligibility = await readOfficialHolderEligibility({ address, solanaAddress });
+  if (!eligibility.eligibleToLaunch) {
+    throw new Error(`Hold $${eligibility.symbol || "PUMPR"} to ${action}. 1%+ holders will also be eligible for later airdrops.`);
+  }
+  return eligibility;
 }
 
 async function buildSolanaAirdropPreview(rawToken, limit = 20) {
@@ -2323,7 +2458,16 @@ function xCallbackUrl(req) {
   if (host.startsWith("localhost:") || host.startsWith("127.0.0.1:")) {
     return `${origin}/api/x/oauth/callback`;
   }
-  if (configured) return configured;
+  if (configured) {
+    try {
+      const configuredHost = new URL(configured).hostname.toLowerCase();
+      const requestHost = new URL(origin).hostname.toLowerCase();
+      const staleEtherpumpCallback = configuredHost.includes("etherpump.fun") && requestHost.includes("pump-r.fun");
+      if (!staleEtherpumpCallback) return configured;
+    } catch {
+      return configured;
+    }
+  }
   return `${origin}/api/x/oauth/callback`;
 }
 
@@ -4226,6 +4370,10 @@ app.post("/api/pumpfun/launch", async (req, res) => {
     if (!userPublicKey) {
       return res.status(400).json({ error: "Connect a Solana wallet first" });
     }
+    const holderEligibility = await assertOfficialHolderAccess({
+      solanaAddress: userPublicKey,
+      action: "launch tokens through Pump-r"
+    });
 
     let user;
     let creator;
@@ -4306,6 +4454,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       metadataUri,
       transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
       signingToken,
+      holderEligibility,
       presignSimulationWarning,
       rpcUrl,
       blockhash: latest.blockhash,
@@ -4475,6 +4624,18 @@ app.get("/api/airdrop/preview", async (req, res) => {
 app.get("/api/airdrop/official", (_req, res) => {
   const official = officialAirdropConfig();
   res.json(official);
+});
+
+app.get("/api/holder/eligibility", async (req, res) => {
+  try {
+    const eligibility = await readOfficialHolderEligibility({
+      address: req.query.address || "",
+      solanaAddress: req.query.solanaAddress || req.query.solana || ""
+    });
+    res.json(eligibility);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to verify Pump-r holder eligibility" });
+  }
 });
 
 app.get("/api/health", async (req, res) => {

@@ -227,6 +227,20 @@ const V2_PAIR_SWAP_EVENT_ABI = [
 ];
 const V2_PAIR_META_ABI = ["function token0() view returns (address)", "function token1() view returns (address)"];
 const CLAIM_MIN_USD = 8;
+
+async function ensurePumpRHolderPaymentAccess(address) {
+  const eligibility = await api.holderEligibility({ address });
+  if (!eligibility?.configured) {
+    throw new Error("Official Pump-r token is not configured yet. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling creator payments.");
+  }
+  if (eligibility.required !== false && !eligibility.eligibleToLaunch) {
+    const symbol = String(eligibility.symbol || "PUMPR").replace(/^\$/, "").toUpperCase();
+    const chain = String(eligibility.chainShortName || eligibility.chainName || "configured chain");
+    throw new Error(`Hold $${symbol} in your ${chain} wallet to receive creator payments. 1%+ holders will also be eligible for later airdrops.`);
+  }
+  return eligibility;
+}
+
 const RECENT_VIEWED_KEY = "etherpump.search.viewed.v1";
 
 
@@ -2125,6 +2139,7 @@ async function onClaimCreatorRewards() {
     const creator = String(state.launch?.creator || "").toLowerCase();
     const connected = String(ws.address || "").toLowerCase();
     if (!creator || connected !== creator) throw new Error("Only the token creator can claim rewards");
+    await ensurePumpRHolderPaymentAccess(ws.address);
     const claimableWei = parseBigIntSafe(state.launch?.feeSnapshot?.creatorClaimableWei || "0");
     if (claimableWei <= 0n) throw new Error("No creator rewards to claim yet");
     const claimableUsd = creatorClaimableUsdFromLaunch(state.launch);

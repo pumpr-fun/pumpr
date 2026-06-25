@@ -117,7 +117,7 @@ function loadCachedLaunches() {
     const launches = Array.isArray(payload?.launches) ? payload.launches : [];
     if (!launches.length) return [];
     if (!Number.isFinite(ts) || Date.now() - ts > LAUNCH_CACHE_MAX_AGE_MS) return [];
-    return launches;
+    return filterHomeLaunchRows(launches);
   } catch {
     return [];
   }
@@ -130,7 +130,7 @@ function saveCachedLaunches(launches) {
       LAUNCH_CACHE_KEY,
       JSON.stringify({
         ts: Date.now(),
-        launches: Array.isArray(launches) ? launches : []
+        launches: filterHomeLaunchRows(launches)
       })
     );
   } catch {
@@ -142,6 +142,16 @@ function isPumpVerseLaunchRow(launch = {}) {
   const name = String(launch?.name || "").toLowerCase();
   const symbol = String(launch?.symbol || "").toLowerCase();
   return name.includes("pumpverse") || symbol.includes("pumpverse");
+}
+
+function isBlockedLegacyHomeToken(launch = {}) {
+  const symbol = String(launch?.symbol || launch?.tokenSymbol || "").replace(/^\$+/, "").trim().toLowerCase();
+  const name = String(launch?.name || launch?.projectName || "").trim().toLowerCase();
+  return symbol === "job" || symbol === "getmeajob" || name === "getmeajob" || name.includes("get me a job");
+}
+
+function filterHomeLaunchRows(rows = []) {
+  return (Array.isArray(rows) ? rows : []).filter((row) => row && !isBlockedLegacyHomeToken(row));
 }
 
 function launchRankValue(launch = {}) {
@@ -188,7 +198,7 @@ function mergeLaunchRows(base = [], updates = []) {
     const dexSnapshot = row.dexSnapshot || previous.dexSnapshot || null;
     byToken.set(token, { ...previous, ...row, pool, dexSnapshot });
   }
-  return collapsePumpVerseRows(Array.from(byToken.values())).sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
+  return filterHomeLaunchRows(collapsePumpVerseRows(Array.from(byToken.values()))).sort((a, b) => Number(b?.createdAt || 0) - Number(a?.createdAt || 0));
 }
 
 async function fetchLaunchPages(options = {}) {
@@ -201,7 +211,7 @@ async function fetchLaunchPages(options = {}) {
 
   for (let pageIndex = 0; pageIndex < maxPages; pageIndex++) {
     const page = await api.launches(pageSize, offset, options);
-    const rows = Array.isArray(page?.launches) ? page.launches.filter((row) => Boolean(row && row.token)) : [];
+    const rows = filterHomeLaunchRows(Array.isArray(page?.launches) ? page.launches.filter((row) => Boolean(row && row.token)) : []);
     if (total === null) total = Number(page?.total || 0);
     for (const row of rows) {
       const token = getTokenId(row);
@@ -218,7 +228,7 @@ async function fetchLaunchPages(options = {}) {
 
 async function fetchRecentLaunchPage(options = {}) {
   const page = await api.launches(options.limit || 24, 0, options);
-  const launches = Array.isArray(page?.launches) ? page.launches.filter((row) => Boolean(row && row.token)) : [];
+  const launches = filterHomeLaunchRows(Array.isArray(page?.launches) ? page.launches.filter((row) => Boolean(row && row.token)) : []);
   return { total: Number(page?.total || launches.length), launches };
 }
 

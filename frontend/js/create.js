@@ -208,6 +208,23 @@ function requiredMinLiquidityEth(address = walletState().address) {
   return MIN_INITIAL_LIQUIDITY_ETH;
 }
 
+function formatHolderAccessMessage(eligibility = {}, action = "launch tokens") {
+  const symbol = String(eligibility.symbol || "PUMPR").replace(/^\$/, "").toUpperCase();
+  const chain = String(eligibility.chainShortName || eligibility.chainName || "configured chain");
+  return `Hold $${symbol} in your ${chain} wallet to ${action}. 1%+ holders will also be eligible for later airdrops.`;
+}
+
+async function ensurePumpRHolderAccess({ address = "", solanaAddress = "", action = "launch tokens" } = {}) {
+  const eligibility = await api.holderEligibility({ address, solanaAddress });
+  if (!eligibility?.configured) {
+    throw new Error("Official Pump-r token is not configured yet. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling launches.");
+  }
+  if (eligibility.required !== false && !eligibility.eligibleToLaunch) {
+    throw new Error(formatHolderAccessMessage(eligibility, action));
+  }
+  return eligibility;
+}
+
 function syncLiquidityInputMin() {
   if (!ui.devBuyEth) return;
   const minLiquidity = requiredMinLiquidityEth(walletState().address);
@@ -1248,6 +1265,10 @@ async function launchOnChain(chainId, details, { showModal = true, quoteMode = s
   state.selectedChainId = Number(state.config?.chainId || target);
   await ensureWalletChain(state.selectedChainId);
   await walletHub?.refresh();
+  await ensurePumpRHolderAccess({
+    address: walletState().address,
+    action: "launch tokens through Pump-r"
+  });
 
   const factory = makeFactoryContract(state.config.factoryAddress);
   const launchFeeWei = BigInt(state.config?.deployment?.launchFeeWei || "0");
@@ -1415,6 +1436,10 @@ function bytesToBase64(bytes) {
 
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
+  await ensurePumpRHolderAccess({
+    solanaAddress: publicKey,
+    action: "launch tokens through Pump-r"
+  });
   const solanaWeb3 = await loadSolanaWeb3();
   setAlert(ui.alert, "Preparing official Pump.fun SDK transaction...");
   const payload = await api.pumpfunLaunch({

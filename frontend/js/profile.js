@@ -28,6 +28,19 @@ import { initSupportWidget } from "./support.js";
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 const CLAIM_MIN_USD = 8;
 
+async function ensurePumpRHolderPaymentAccess(address) {
+  const eligibility = await api.holderEligibility({ address });
+  if (!eligibility?.configured) {
+    throw new Error("Official Pump-r token is not configured yet. Set PUMPR_TOKEN_ADDRESS and PUMPR_TOKEN_CHAIN_ID before enabling creator payments.");
+  }
+  if (eligibility.required !== false && !eligibility.eligibleToLaunch) {
+    const symbol = String(eligibility.symbol || "PUMPR").replace(/^\$/, "").toUpperCase();
+    const chain = String(eligibility.chainShortName || eligibility.chainName || "configured chain");
+    throw new Error(`Hold $${symbol} in your ${chain} wallet to receive creator payments. 1%+ holders will also be eligible for later airdrops.`);
+  }
+  return eligibility;
+}
+
 const ui = {
   walletSelect: document.getElementById("walletChoice"),
   connectBtn: document.getElementById("connectBtn"),
@@ -961,6 +974,7 @@ function setupCreatorRewardsActions() {
       if (!ws.signer || !ws.address) {
         throw new Error("Connect wallet first");
       }
+      await ensurePumpRHolderPaymentAccess(ws.address);
       trigger.disabled = true;
       setAlert(ui.alert, "Claiming creator rewards...");
 
