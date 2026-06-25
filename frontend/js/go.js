@@ -442,11 +442,14 @@ async function waitForPumpFunSubmissionReceipt({ bountyId, submissionId, publicK
   return latest || { resumeSignature };
 }
 
-async function connectSolanaForPumpFun() {
+async function connectSolanaForPumpFun(options = {}) {
   await ensureWalletChain(101);
   let solana = solanaWalletState();
-  if (!solana?.provider || !solana?.address) {
-    solana = await connectSolanaWallet({ forcePrompt: true });
+  if (!solana?.provider || !solana?.address || options.requireSignature) {
+    solana = await connectSolanaWallet({
+      forcePrompt: true,
+      requireSignature: Boolean(options.requireSignature)
+    });
   }
   if (!solana?.provider || !solana?.address) throw new Error("Connect Phantom Solana before publishing to Pump.fun");
   if (typeof solana.provider.signTransaction !== "function") {
@@ -1114,7 +1117,7 @@ async function initWallet() {
     event.preventDefault();
     event.stopImmediatePropagation();
     try {
-      const { publicKey } = await connectSolanaForPumpFun();
+      const { publicKey } = await connectSolanaForPumpFun({ requireSignature: true });
       setAlert(ui.alert, `Phantom connected: ${shortAddress(publicKey)}`);
       await refreshPumpFunSession(publicKey);
     } catch (error) {

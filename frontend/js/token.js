@@ -1066,7 +1066,7 @@ function setupProfileMenu() {
 
   ui.menuLogoutBtn?.addEventListener("click", () => {
     const ws = walletState();
-    if (!ws.signer || !ws.address) {
+    if (!ws.signer && !ws.address && !ws.solanaAddress) {
       if (walletControls?.connect) {
         walletControls.connect();
       } else {

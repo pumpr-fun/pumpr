@@ -579,7 +579,7 @@ export function initWalletControls({ selectEl, connectBtn, disconnectBtn, labelE
       const choice = await showWalletPickerModal(wallets);
       const walletKey = String(choice || "").split(":")[0];
       if (walletKey === "phantom") {
-        await connectSolanaWallet({ requirePrompt: true });
+        await connectSolanaWallet({ requirePrompt: true, requireSignature: true });
       } else {
         await connectWallet(choice);
       }
@@ -798,9 +798,9 @@ export function initTopbarWalletProfile({
     if (els.profileMenu.contains(event.target) || els.profileMenuBtn.contains(event.target)) return;
     setProfileOpen(false);
   });
-  els.menuLogoutBtn?.addEventListener("click", () => {
-    controls.disconnect();
-    update();
+  els.menuLogoutBtn?.addEventListener("click", async () => {
+    await controls.disconnect();
+    await update();
   });
 
   update();

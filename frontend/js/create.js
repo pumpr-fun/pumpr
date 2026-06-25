@@ -698,11 +698,7 @@ function setupProfileMenu() {
 
   ui.menuLogoutBtn?.addEventListener("click", () => {
     if (isPumpFunMode() && state.solanaWallet?.publicKey) {
-      try {
-        state.solanaWallet.provider?.disconnect?.();
-      } catch {
-        // optional wallet API
-      }
+      disconnectWallet();
       state.solanaWallet = null;
       setAlert(ui.alert, "Solana wallet disconnected");
       setProfileMenuOpen(false);
@@ -1403,11 +1399,15 @@ async function loadSolanaWeb3() {
   return window.solanaWeb3;
 }
 
-async function connectSolanaWallet() {
+async function connectSolanaWallet(options = {}) {
   const existing = solanaWalletState();
-  const wallet = existing?.provider && existing?.address
+  const forceSignIn = Boolean(options?.requirePrompt || options?.requireSignature);
+  const wallet = existing?.provider && existing?.address && !forceSignIn
     ? existing
-    : await connectSharedSolanaWallet({ requirePrompt: true });
+    : await connectSharedSolanaWallet({
+      requirePrompt: true,
+      requireSignature: Boolean(options?.requireSignature)
+    });
   const text = wallet?.address || wallet?.publicKey || "";
   if (!wallet?.provider || !text) throw new Error("Solana wallet did not return a public key");
   state.solanaWallet = { provider: wallet.provider, publicKey: text };
@@ -1728,7 +1728,7 @@ async function init() {
 
   ui.signInBtn?.addEventListener("click", () => {
     if (isPumpFunMode()) {
-      connectSolanaWallet().catch((err) => setAlert(ui.alert, parseUiError(err), true));
+      connectSolanaWallet({ requirePrompt: true, requireSignature: true }).catch((err) => setAlert(ui.alert, parseUiError(err), true));
       return;
     }
     if (walletControls?.connect) {

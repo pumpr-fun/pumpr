@@ -254,28 +254,38 @@ function displayNameForAddress(address) {
 
 function updateProfileIdentity() {
   const ws = walletState();
-  const connected = Boolean(ws.signer && ws.address);
-  const profile = connected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
-  const username = connected ? profile.username || defaultUsername(ws.address) : "Guest";
-  const avatarText = connected ? username.slice(0, 2).toUpperCase() : "EP";
-  const imageUri = connected ? profile.imageUri || "" : "";
-  const profileHref = connected ? `/profile?address=${ws.address}` : "/profile";
+  const evmConnected = Boolean(ws.signer && ws.address);
+  const solanaConnected = Boolean(ws.solanaAddress);
+  const connected = evmConnected || solanaConnected;
+  const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
+  const username = solanaConnected && !evmConnected
+    ? `sol_${String(ws.solanaAddress).slice(0, 6)}`
+    : evmConnected
+      ? profile.username || defaultUsername(ws.address)
+      : "Guest";
+  const avatarText = solanaConnected && !evmConnected ? "SOL" : connected ? username.slice(0, 2).toUpperCase() : "EP";
+  const imageUri = evmConnected ? profile.imageUri || "" : "";
+  const profileHref = evmConnected ? `/profile?address=${ws.address}` : "/profile";
 
   if (ui.profileMenuName) ui.profileMenuName.textContent = username;
   if (ui.profileMenuNameLarge) ui.profileMenuNameLarge.textContent = username;
   if (ui.profileMenuMeta) {
-    if (connected) {
+    if (evmConnected) {
       const cachedFollowers = loadCachedFollowerCount(ws.address);
       ui.profileMenuMeta.textContent = followerMetaText(cachedFollowers ?? 0);
+    } else if (solanaConnected) {
+      ui.profileMenuMeta.textContent = "Solana wallet connected";
     } else {
       ui.profileMenuMeta.textContent = "Not connected";
     }
   }
   if (ui.signInBtn) ui.signInBtn.style.display = connected ? "none" : "inline-flex";
-  if (ui.walletHubBtn) ui.walletHubBtn.style.display = connected ? "inline-flex" : "none";
+  if (ui.walletHubBtn) ui.walletHubBtn.style.display = evmConnected ? "inline-flex" : "none";
   if (ui.profileMenuBtn) ui.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
-  if (!connected) {
+  if (!evmConnected) {
     walletHub?.setOpen(false);
+  }
+  if (!connected) {
     setProfileMenuOpen(false);
   }
   if (ui.profileNav) ui.profileNav.href = profileHref;
@@ -285,16 +295,16 @@ function updateProfileIdentity() {
   syncFollowButton();
 
   if (ui.editProfileBtn) {
-    ui.editProfileBtn.disabled = !connected;
-    ui.editProfileBtn.style.opacity = connected ? "1" : "0.6";
-    ui.editProfileBtn.style.cursor = connected ? "pointer" : "not-allowed";
+    ui.editProfileBtn.disabled = !evmConnected;
+    ui.editProfileBtn.style.opacity = evmConnected ? "1" : "0.6";
+    ui.editProfileBtn.style.cursor = evmConnected ? "pointer" : "not-allowed";
   }
 
   if (ui.menuLogoutBtn) {
     ui.menuLogoutBtn.textContent = connected ? "Log out" : "Connect wallet";
   }
 
-  if (connected) {
+  if (evmConnected) {
     const currentAddress = String(ws.address || "");
     hydrateFollowerCount(currentAddress).then((followersCount) => {
       const next = walletState();
@@ -1239,7 +1249,7 @@ function setupProfileMenu() {
 
   ui.menuLogoutBtn?.addEventListener("click", () => {
     const ws = walletState();
-    if (!ws.signer || !ws.address) {
+    if (!ws.signer && !ws.address && !ws.solanaAddress) {
       if (walletControls?.connect) {
         walletControls.connect();
       } else {

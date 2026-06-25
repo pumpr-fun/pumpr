@@ -701,9 +701,24 @@ export function solanaWalletState() {
   };
 }
 
+async function signSolanaLoginMessage(provider, publicKey) {
+  if (typeof provider?.signMessage !== "function") {
+    throw new Error("Phantom did not expose message signing. Unlock Phantom and try again.");
+  }
+  const message = [
+    "Sign in to Pump-r.fun",
+    `Wallet: ${publicKey}`,
+    `Origin: ${window.location.origin}`,
+    `Time: ${new Date().toISOString()}`
+  ].join("\n");
+  const encoded = new TextEncoder().encode(message);
+  await provider.signMessage(encoded, "utf8");
+}
+
 export async function connectSolanaWallet(options = {}) {
   const silent = Boolean(options?.silent);
   const requirePrompt = Boolean(options?.requirePrompt || options?.forcePrompt);
+  const requireSignature = Boolean(options?.requireSignature);
   const provider = getSolanaProvider();
   if (!provider?.connect) {
     if (silent) return null;
@@ -737,6 +752,21 @@ export async function connectSolanaWallet(options = {}) {
   state.solanaProvider = provider;
   state.solanaAddress = publicKey;
   state.solanaWalletLabel = provider.isPhantom ? "Phantom" : "Solana wallet";
+  if (!silent && requireSignature) {
+    try {
+      await signSolanaLoginMessage(provider, publicKey);
+    } catch (error) {
+      try {
+        await provider.disconnect?.();
+      } catch {
+        // optional wallet API
+      }
+      state.solanaProvider = null;
+      state.solanaAddress = "";
+      state.solanaWalletLabel = "";
+      throw error;
+    }
+  }
   if (!silent) {
     saveWalletSession({ connected: true, choice: "phantom", type: "solana", address: publicKey });
   }
@@ -767,6 +797,7 @@ export function disconnectSolanaWallet() {
   state.solanaProvider = null;
   state.solanaAddress = "";
   state.solanaWalletLabel = "";
+  window.dispatchEvent(new CustomEvent("etherpump:solanaWalletChanged", { detail: solanaWalletState() }));
 }
 
 export function disconnectWallet() {
@@ -776,7 +807,7 @@ export function disconnectWallet() {
   state.walletLabel = "";
   state.activeInjectedProvider = null;
   disconnectSolanaWallet();
-  saveWalletSession({ connected: false, choice: "", address: "" });
+  saveWalletSession({ connected: false, choice: "", type: "evm", address: "" });
 }
 
 export async function restoreWalletFromSession(choice = "") {
