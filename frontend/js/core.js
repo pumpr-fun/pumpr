@@ -289,6 +289,37 @@ function readSocialAuthSession() {
   }
 }
 
+function readJsonLocalStorage(key) {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(key) || "null");
+    return parsed && typeof parsed === "object" ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function recoverSavedSocialIdentity() {
+  const keys = [
+    SOCIAL_AUTH_SESSION_KEY,
+    "etherpump.alpha.xauth.v1",
+    "etherpump.go.xauth.v1",
+    "Pump-r.community.xauth.v2"
+  ];
+  for (const key of keys) {
+    const parsed = readJsonLocalStorage(key);
+    const identity = normalizeSocialIdentity({
+      type: parsed?.type || "x",
+      id: parsed?.id || parsed?.userId || "",
+      username: parsed?.username || parsed?.xHandle || "",
+      name: parsed?.name || parsed?.displayName || parsed?.username || parsed?.xHandle || "",
+      image: parsed?.image || parsed?.profileImageUrl || parsed?.avatar || "",
+      followers: parsed?.followers || parsed?.followersCount || 0
+    });
+    if (identity?.socialKey) return identity;
+  }
+  return null;
+}
+
 function saveSocialAuthSession(value = {}) {
   const identity = normalizeSocialIdentity(value);
   if (!identity) return null;
@@ -348,6 +379,31 @@ function readSocialWalletStore() {
   } catch {
     return {};
   }
+}
+
+function findSocialWalletRowByAddress(address = "") {
+  const target = String(address || "").trim();
+  if (!target) return null;
+  const store = readSocialWalletStore();
+  for (const row of Object.values(store)) {
+    if (String(row?.address || "").trim() === target && row?.secretKeyBase64) return row;
+  }
+  return null;
+}
+
+function findSocialWalletRowByIdentity(identity = {}) {
+  if (!identity?.socialKey) return null;
+  const store = readSocialWalletStore();
+  if (store[identity.socialKey]?.secretKeyBase64) return store[identity.socialKey];
+  const username = String(identity.username || "").trim().toLowerCase();
+  const email = String(identity.email || "").trim().toLowerCase();
+  for (const row of Object.values(store)) {
+    const rowIdentity = normalizeSocialIdentity(row?.identity || {}) || row?.identity || {};
+    if (!row?.secretKeyBase64) continue;
+    if (email && String(rowIdentity.email || "").trim().toLowerCase() === email) return row;
+    if (username && String(rowIdentity.username || "").trim().toLowerCase() === username) return row;
+  }
+  return null;
 }
 
 function writeSocialWalletStore(store = {}) {
@@ -476,6 +532,9 @@ export async function connectSocialWallet(identityInput = {}) {
     row = { ...row, identity, address: String(row.address || "").trim() };
   }
   store[identity.socialKey] = row;
+  if (identity.type === "x" && identity.username) {
+    store[`x:${identity.username.toLowerCase()}`] = row;
+  }
   writeSocialWalletStore(store);
   return await activateGeneratedWallet(row);
 }
@@ -483,7 +542,7 @@ export async function connectSocialWallet(identityInput = {}) {
 export function getGeneratedWalletInfo() {
   const session = readSocialAuthSession();
   if (!session?.socialKey) return null;
-  const row = readSocialWalletStore()[session.socialKey];
+  const row = findSocialWalletRowByIdentity(session) || findSocialWalletRowByAddress(state.solanaAddress);
   if (!row?.secretKeyBase64) return null;
   const info = publicSocialWalletInfo(row);
   return info.address && info.address === String(state.solanaAddress || "") ? info : null;
@@ -492,7 +551,7 @@ export function getGeneratedWalletInfo() {
 export function exportGeneratedWalletPrivateKey() {
   const session = readSocialAuthSession();
   if (!session?.socialKey) throw new Error("No generated X/email wallet is connected");
-  const row = readSocialWalletStore()[session.socialKey];
+  const row = findSocialWalletRowByIdentity(session) || findSocialWalletRowByAddress(state.solanaAddress);
   if (!row?.secretKeyBase64) throw new Error("No generated Solana wallet private key was found for this login");
   const address = String(row.address || "").trim();
   if (!state.solanaAddress || address !== state.solanaAddress) {
@@ -1045,21 +1104,32 @@ export function disconnectWallet() {
 
 export async function restoreWalletFromSession(choice = "") {
   const session = loadWalletSession();
-  if (!session.connected) return null;
+  if (!session.connected) {
+    const recovered = recoverSavedSocialIdentity();
+    if (recovered?.socialKey) {
+      const row = findSocialWalletRowByIdentity(recovered);
+      if (row?.secretKeyBase64) {
+        saveSocialAuthSession(recovered);
+        return await activateGeneratedWallet({ ...row, identity: recovered });
+      }
+    }
+    return null;
+  }
 
   const target = choice || session.choice || "metamask";
   if (session.type === "social" || target === "social") {
-    const social = readSocialAuthSession();
+    const social = readSocialAuthSession() || recoverSavedSocialIdentity();
     if (!social?.socialKey) {
       disconnectWallet();
       return null;
     }
-    const row = readSocialWalletStore()[social.socialKey];
-    if (!row?.privateKey) {
+    const row = findSocialWalletRowByIdentity(social) || findSocialWalletRowByAddress(session.address);
+    if (!row?.secretKeyBase64) {
       disconnectWallet();
       return null;
     }
-    return await activateGeneratedWallet(row);
+    saveSocialAuthSession(social);
+    return await activateGeneratedWallet({ ...row, identity: social });
   }
   if (session.type === "solana" || target === "phantom") {
     const restored = await connectSolanaWallet({ silent: true });
