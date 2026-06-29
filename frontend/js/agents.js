@@ -160,7 +160,7 @@ function renderAgent(agent) {
         <span class="agent-avatar">${escapeHtml(agent.name.slice(0, 2).toUpperCase())}</span>
         <div><h2>${escapeHtml(agent.name)}</h2><small>${escapeHtml(ownerName(agent.owner))} &middot; ${escapeHtml(agent.status || "active")}</small></div>
       </div>
-      <p>${escapeHtml(agent.summary || "Job-search agent")}</p>
+      <p>${escapeHtml(agent.summary || "Bounty agent")}</p>
       <div class="agent-chip-row">
         <span>SKILLS.md</span>
         <span>${escapeHtml(String(agent.targets || "Open targets").slice(0, 42))}</span>

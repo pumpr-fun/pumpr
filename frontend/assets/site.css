@@ -12843,35 +12843,41 @@ body {
 
 .agents-page .agent-mode-wrap,
 .agents-page .agents-layout {
-  width: min(100%, 1520px);
+  width: min(100%, 1480px);
   margin-inline: auto;
 }
 
 .agents-page .agent-mode-wrap {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-columns: 1fr;
   align-items: start;
-  gap: 0.9rem;
-  padding: 1rem 1.4rem 0;
+  gap: 0.75rem;
+  padding: 0.95rem 1.4rem 0;
   border-bottom: 0;
 }
 
 .agents-page .agent-mode-tabs {
-  position: sticky;
-  top: 0.7rem;
-  z-index: 2;
-  display: grid;
-  gap: 0.45rem;
-  min-width: 142px;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: max-content;
+  max-width: 100%;
   margin: 0;
+  padding: 0.28rem;
+  border: 1px solid #2b3037;
+  border-radius: 8px;
+  background: #101316;
 }
 
 .agents-page .agent-mode-btn {
-  min-height: 38px;
+  min-width: 132px;
+  min-height: 36px;
   justify-content: center;
-  border-color: #30343b;
-  background: #121417;
+  border-color: transparent;
+  border-radius: 6px;
+  background: transparent;
   color: #f3f7f5;
+  box-shadow: none;
 }
 
 .agents-page .agent-mode-btn.active,
@@ -12883,13 +12889,14 @@ body {
 
 .agents-page .agent-join-panel {
   display: grid;
-  grid-template-columns: minmax(220px, 0.7fr) minmax(320px, 1fr);
+  grid-template-columns: minmax(300px, 0.82fr) minmax(420px, 1fr);
   align-items: center;
-  gap: 0.95rem;
+  gap: 0.8rem;
   max-width: none;
-  min-height: 116px;
-  padding: 1rem;
+  min-height: 96px;
+  padding: 0.9rem;
   border-color: #2a2f35;
+  border-radius: 8px;
   background: #121417;
 }
 
@@ -12909,13 +12916,14 @@ body {
 .agents-page .agent-join-copy h2 {
   margin: 0;
   color: #f8faf9;
-  font-size: 1.22rem;
+  font-size: 1.12rem;
   line-height: 1.12;
 }
 
 .agents-page .agent-join-panel ol {
-  display: grid;
-  gap: 0.18rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 1.35rem;
   margin: 0;
   padding-left: 1rem;
   color: #b8c1bd;
@@ -12924,8 +12932,10 @@ body {
 }
 
 .agents-page .agent-skill-command {
-  min-height: 76px;
+  min-height: 58px;
+  padding: 0.65rem 0.72rem;
   border-color: #2c3339;
+  border-radius: 8px;
   background: #0a0d10;
 }
 
@@ -12948,10 +12958,17 @@ body {
   border-top-color: #2c3339;
 }
 
+.agents-page .agent-skill-preview pre {
+  max-height: 178px;
+  margin-top: 0.65rem;
+  overflow: auto;
+}
+
 .agents-page .agents-layout {
-  grid-template-columns: minmax(0, 1fr) minmax(330px, 370px);
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 390px);
+  align-items: start;
   gap: 1rem;
-  padding: 1rem 1.4rem 2rem;
+  padding: 0.95rem 1.4rem 2rem;
 }
 
 .agents-page .agents-main {
@@ -12960,25 +12977,33 @@ body {
 
 .agents-page .agents-side {
   gap: 0.9rem;
+  position: sticky;
+  top: 0.85rem;
+  max-height: 560px;
+  overflow-y: auto;
+  padding-right: 0.22rem;
+  scrollbar-width: thin;
+  scrollbar-color: #3a4149 transparent;
 }
 
 .agents-page .agents-hero {
   align-items: center;
-  min-height: 128px;
-  padding: 1.1rem 1.15rem;
+  min-height: 116px;
+  padding: 1rem 1.05rem;
   border-color: #2a2f35;
+  border-radius: 8px;
   background: #121417;
 }
 
 .agents-page .agents-hero h1 {
   margin-top: 0.18rem;
-  font-size: clamp(1.8rem, 2.7vw, 2.45rem);
+  font-size: clamp(1.65rem, 2.2vw, 2.15rem);
 }
 
 .agents-page .agents-hero p {
   max-width: 760px;
-  margin: 0.45rem 0 0;
-  line-height: 1.5;
+  margin: 0.36rem 0 0;
+  line-height: 1.42;
 }
 
 .agents-page .agents-stats {
@@ -12990,6 +13015,7 @@ body {
 .agents-page .agents-stats span,
 .agents-page .agent-chip-row span {
   border-color: #303841;
+  border-radius: 999px;
   background: #0a0d10;
 }
 
@@ -13003,6 +13029,7 @@ body {
   gap: 0.75rem;
   min-height: 0;
   border-color: #2a2f35;
+  border-radius: 8px;
   background: #121417;
 }
 
@@ -13037,6 +13064,7 @@ body {
 .agents-page .agent-skills-preview {
   max-height: 126px;
   margin: 0;
+  border-radius: 8px;
   border-color: #293039;
   color: #dfe9e4;
 }
@@ -13052,26 +13080,72 @@ body {
 }
 
 .agents-page .agent-form {
-  gap: 0.72rem;
-  padding: 1rem;
+  gap: 0.46rem;
+  padding: 0.76rem;
   border-color: #2a2f35;
+  border-radius: 8px;
   background: #121417;
 }
 
+.agents-page .agent-form small {
+  font-size: 0.64rem;
+}
+
 .agents-page .agent-form h2 {
-  font-size: 1.08rem;
+  margin-bottom: 0.08rem;
+  font-size: 0.96rem;
+}
+
+.agents-page .agent-form label {
+  gap: 0.24rem;
+  font-size: 0.72rem;
 }
 
 .agents-page .agent-form input,
 .agents-page .agent-form textarea,
 .agents-page .agent-form select {
-  min-height: 38px;
+  min-height: 32px;
   border-color: #303841;
+  border-radius: 7px;
   background: #090c0f;
+  padding: 0.52rem 0.62rem;
+  font-size: 0.78rem;
 }
 
 .agents-page .agent-form textarea {
   resize: vertical;
+}
+
+.agents-page #agentSummary {
+  min-height: 44px;
+}
+
+.agents-page #agentTargets {
+  min-height: 48px;
+}
+
+.agents-page #agentGoals {
+  min-height: 52px;
+}
+
+.agents-page #agentSkills {
+  min-height: 112px;
+}
+
+.agents-page #agentPostBody {
+  min-height: 100px;
+}
+
+.agents-page .agent-file-pick {
+  min-height: 32px;
+  padding: 0.46rem 0.6rem;
+  border-radius: 7px;
+}
+
+.agents-page .agent-media-name,
+.agents-page .agent-inline-status {
+  min-height: 0;
+  font-size: 0.75rem;
 }
 
 .agents-page .agent-action-row {
@@ -13082,8 +13156,9 @@ body {
 .agents-page .agent-action-row .btn-ghost,
 .agents-page .agent-action-row .btn-primary,
 .agents-page .agent-form > .btn-primary {
-  min-height: 38px;
+  min-height: 34px;
   border-radius: 7px;
+  font-size: 0.78rem;
 }
 
 @media (max-width: 1180px) {
@@ -13092,13 +13167,10 @@ body {
     grid-template-columns: 1fr;
   }
 
-  .agents-page .agent-mode-tabs {
-    position: static;
-    display: flex;
-    min-width: 0;
-  }
-
   .agents-page .agents-side {
+    position: static;
+    max-height: none;
+    overflow: visible;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }
@@ -13107,6 +13179,15 @@ body {
   .agents-page .agent-mode-wrap,
   .agents-page .agents-layout {
     padding-inline: 1rem;
+  }
+
+  .agents-page .agent-mode-tabs {
+    width: 100%;
+  }
+
+  .agents-page .agent-mode-btn {
+    min-width: 0;
+    flex: 1 1 0;
   }
 
   .agents-page .agent-join-panel,

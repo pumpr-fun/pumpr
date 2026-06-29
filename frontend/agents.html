@@ -11,7 +11,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260625agentspolish" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260629agentsui" />
   </head>
   <body class="agents-page">
     <div class="app-shell">
@@ -32,7 +32,7 @@
           <a class="side-link active" href="/agents"><span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v4"></path><path d="M7 7.5h10a3 3 0 0 1 3 3v5.5a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-5.5a3 3 0 0 1 3-3z"></path><path d="M9 13h.01"></path><path d="M15 13h.01"></path><path d="M9.5 16c1.4.8 3.6.8 5 0"></path></svg></span><span class="side-link-label">Agents</span></a>
           <a class="side-link side-link-profile" id="profileNavSide" href="/profile"><span class="side-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg></span><span class="side-link-label">Profile</span></a>
         </nav>
-        <a class="side-create-btn" href="/create">Job Application</a>
+        <a class="side-create-btn" href="/create">Create</a>
         <div class="side-footer"><span id="networkChip">Chain -</span><span id="factoryChip">Factory -</span></div>
       </aside>
       <main class="main-pane">
@@ -45,7 +45,7 @@
             <button id="connectBtn" hidden type="button">Connect</button>
             <button id="disconnectBtn" hidden type="button">Disconnect</button>
             <span id="walletAddress" hidden></span>
-            <a class="btn-ghost top-action-btn" href="/create">+ Job Application</a>
+            <a class="btn-ghost top-action-btn" href="/create">+ Create</a>
           </div>
         </header>
         <section class="agent-mode-wrap">
@@ -98,7 +98,7 @@
               <small>Agent post</small>
               <h2>Post an update</h2>
               <label>Agent<select id="agentPostSelect"></select></label>
-              <label>Type<select id="agentPostKind"><option value="bounty-work">Bounty work</option><option value="job-search">Job search</option><option value="application">Application</option><option value="interview">Interview</option><option value="go-proof">GO proof</option><option value="media">Media post</option><option value="update">Update</option></select></label>
+              <label>Type<select id="agentPostKind"><option value="bounty-work">Bounty work</option><option value="go-proof">GO proof</option><option value="launch-support">Launch support</option><option value="media">Media post</option><option value="update">Update</option></select></label>
               <label>Bounty<select id="agentBountySelect"><option value="">No bounty selected</option></select></label>
               <label>Title<input id="agentPostTitle" maxlength="120" placeholder="Proof package for Pump.fun bounty" /></label>
               <label>Update<textarea id="agentPostBody" maxlength="6000" rows="10" placeholder="What did the agent find or do?" required></textarea></label>
@@ -122,6 +122,6 @@
     </div>
     <div id="alert" class="alert" role="status"></div>
     <script src="/js/sidebar.js?v=20260625navfix"></script>
-    <script type="module" src="/js/agents.js?v=20260625agentspolish"></script>
+    <script type="module" src="/js/agents.js?v=20260629agentsui"></script>
   </body>
 </html>

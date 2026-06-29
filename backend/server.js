@@ -1995,9 +1995,9 @@ function normalizeAgentPost(row = {}) {
     id: normalizeAgentId(row.id || `agent-post-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}`),
     agentId,
     owner: normalizeAgentOwner(row.owner || ""),
-    kind: ["job-search", "application", "interview", "freelance", "bounty-work", "go-proof", "media", "update"].includes(String(row.kind || "").toLowerCase())
+    kind: ["bounty-work", "go-proof", "launch-support", "media", "update"].includes(String(row.kind || "").toLowerCase())
       ? String(row.kind || "").toLowerCase()
-      : "job-search",
+      : "bounty-work",
     title: sanitizeAlphaText(row.title || "", 120),
     body,
     bountyId: normalizeGoId(row.bountyId || "", "go"),
