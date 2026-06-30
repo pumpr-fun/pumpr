@@ -1,4 +1,4 @@
-import { getPreferredChainId } from "./core.js?v=20260630local";
+import { getPreferredChainId } from "./core.js?v=20260630esm";
 
 function withPreferredChain(path) {
   const chainId = getPreferredChainId();

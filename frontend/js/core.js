@@ -1,4 +1,4 @@
-import { ethers } from "../vendor/ethers.min.js?v=20260630local";
+import { ethers } from "./ethers.esm.min.js?v=20260630esm";
 
 export { ethers };
 

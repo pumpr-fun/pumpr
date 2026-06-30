@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260630local";
+import { api } from "./api.js?v=20260630esm";
 import {
   connectSocialWallet,
   defaultUsername,
@@ -9,8 +9,8 @@ import {
   parseUiError,
   shortAddress,
   walletState
-} from "./core.js?v=20260630local";
-import { initTopbarWalletProfile, setAlert, setWalletLabel } from "./ui.js?v=20260630local";
+} from "./core.js?v=20260630esm";
+import { initTopbarWalletProfile, setAlert, setWalletLabel } from "./ui.js?v=20260630esm";
 
 const ALPHA_X_AUTH_KEY = "etherpump.alpha.xauth.v1";
 
