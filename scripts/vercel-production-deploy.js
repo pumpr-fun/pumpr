@@ -1,12 +1,12 @@
-const { execFileSync } = require("child_process");
+const { execSync } = require("child_process");
 
 const DOMAIN = process.env.PUMPR_PRODUCTION_DOMAIN || "pump-r.fun";
 const SKIP = process.env.PUMPR_SKIP_AUTO_DEPLOY === "1";
 
 function run(command, args, options = {}) {
-  return execFileSync(command, args, {
+  const cmd = `${[command, ...args].join(" ")}${options.capture ? " 2>&1" : ""}`;
+  return execSync(cmd, {
     cwd: process.cwd(),
-    shell: process.platform === "win32",
     encoding: "utf8",
     stdio: options.capture ? ["ignore", "pipe", "pipe"] : "inherit"
   });
@@ -21,11 +21,9 @@ function currentBranch() {
 }
 
 function parseDeploymentUrl(output = "") {
-  return String(output || "")
-    .split(/\r?\n/)
-    .map((line) => line.trim())
-    .reverse()
-    .find((line) => /^https:\/\/[^\s]+\.vercel\.app\/?$/.test(line));
+  const clean = String(output || "").replace(/\x1B\[[0-?]*[ -/]*[@-~]/g, "");
+  const matches = [...clean.matchAll(/https:\/\/[^\s"'<>]+\.vercel\.app/g)].map((match) => match[0]);
+  return matches.reverse().find((url) => !url.includes("vercel.com")) || matches.reverse()[0] || "";
 }
 
 async function verifyDomain() {
