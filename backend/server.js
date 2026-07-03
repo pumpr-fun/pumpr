@@ -33,6 +33,7 @@ const PUMPFUN_METADATA_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpum
 const PUMPFUN_LAUNCHES_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "etherpump-pumpfun-launches.json") : path.join(ROOT, "cache", "pumpfun-launches.json");
 const AIRDROP_HOLDER_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-airdrop-holders.json") : path.join(ROOT, "cache", "airdrop-holders.json");
 const PUMPR_CARD_WAITLIST_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-card-waitlist.json") : path.join(ROOT, "cache", "pumpr-card-waitlist.json");
+const REFERRAL_DB_PATH = IS_VERCEL_RUNTIME ? path.join("/tmp", "pumpr-referrals.json") : path.join(ROOT, "cache", "referrals.json");
 const OFFICIAL_PUMPFUN_MINT = "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump";
 const DEFAULT_PUMPR_ADMIN_WALLET = "ER4KEmk3jCeNhfV7hNTNyh2XGNpbE8Pqk9CZsBe2BJiy";
 const SUPABASE_URL = String(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL || "").trim();
@@ -51,6 +52,7 @@ const SUPABASE_PUMPFUN_SESSIONS_OBJECT = String(process.env.SUPABASE_PUMPFUN_SES
 const SUPABASE_PUMPFUN_LAUNCHES_OBJECT = String(process.env.SUPABASE_PUMPFUN_LAUNCHES_OBJECT || "pumpfun/launches.json").trim();
 const SUPABASE_SUPPORT_OBJECT = String(process.env.SUPABASE_SUPPORT_OBJECT || "support/messages.json").trim();
 const SUPABASE_PUMPR_CARD_WAITLIST_OBJECT = String(process.env.SUPABASE_PUMPR_CARD_WAITLIST_OBJECT || "pumpr-card/waitlist.json").trim();
+const SUPABASE_REFERRAL_OBJECT = String(process.env.SUPABASE_REFERRAL_OBJECT || "referrals/referrals.json").trim();
 const COMMUNITY_RESET_BEFORE_UNIX = Math.max(0, Number(process.env.COMMUNITY_RESET_BEFORE_UNIX || "1782413298"));
 const PROFILE_IMAGE_URI_MAX_LENGTH = 2 * 1024 * 1024;
 const STRICT_PROFILE_STORE = String(process.env.STRICT_PROFILE_STORE || (IS_VERCEL_RUNTIME ? "1" : "0")) === "1";
@@ -285,6 +287,8 @@ let alphaDbCache = null;
 let alphaDbRemoteLoaded = false;
 let agentsDbCache = null;
 let agentsDbRemoteLoaded = false;
+let referralDbCache = null;
+let referralDbRemoteLoaded = false;
 let pumpFunBountiesCache = { rows: [], fetchedAt: 0, error: "" };
 const pumpFunBountyDetailCache = new Map();
 let pumpFunLaunchesDbCache = null;
@@ -1735,6 +1739,414 @@ async function addPumprCardWaitlistEntry(value = {}) {
   const entries = [entry, ...(store.entries || []).filter((row) => row.email !== email)];
   await writePumprCardWaitlistPersistent({ entries });
   return entry;
+}
+
+function emptyReferralStore() {
+  return { profiles: [], referrals: [], visits: [], payouts: [], updatedAt: 0 };
+}
+
+function referralWalletKey(input) {
+  return supportAddressKey(input);
+}
+
+function normalizeReferralName(value = "") {
+  const text = String(value || "")
+    .trim()
+    .toLowerCase()
+    .replace(/^@+/, "")
+    .replace(/[^a-z0-9_-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-_]+|[-_]+$/g, "")
+    .slice(0, 24);
+  return /^[a-z0-9][a-z0-9_-]{2,23}$/.test(text) ? text : "";
+}
+
+function reservedReferralNames() {
+  return new Set([
+    "api",
+    "admin",
+    "airdrop",
+    "alpha",
+    "assets",
+    "card",
+    "communities",
+    "create",
+    "go",
+    "home",
+    "js",
+    "profile",
+    "pumpr",
+    "pumpr-card",
+    "referral",
+    "referrals",
+    "support",
+    "token",
+    "uploads"
+  ]);
+}
+
+function defaultReferralName(wallet = "", existing = new Set()) {
+  const normalized = normalizeSupportAddress(wallet);
+  const seed = String(normalized || wallet || "pumpr").replace(/[^a-zA-Z0-9]/g, "").slice(0, 8).toLowerCase() || "holder";
+  const base = normalizeReferralName(`pumpr-${seed}`) || "pumpr-holder";
+  if (!existing.has(base) && !reservedReferralNames().has(base)) return base;
+  for (let i = 2; i < 5000; i += 1) {
+    const candidate = normalizeReferralName(`${base}-${i}`);
+    if (candidate && !existing.has(candidate) && !reservedReferralNames().has(candidate)) return candidate;
+  }
+  return `pumpr-${crypto.randomBytes(3).toString("hex")}`;
+}
+
+function normalizeReferralProfile(row = {}) {
+  const wallet = normalizeSupportAddress(row.wallet || row.address || "");
+  const key = referralWalletKey(wallet);
+  if (!wallet || !key) return null;
+  return {
+    wallet,
+    key,
+    name: normalizeReferralName(row.name || row.code || ""),
+    createdAt: parseUnixTimestamp(row.createdAt || row.created_at || row.ts) || Math.floor(Date.now() / 1000),
+    updatedAt: parseUnixTimestamp(row.updatedAt || row.updated_at || row.ts) || Math.floor(Date.now() / 1000)
+  };
+}
+
+function normalizeReferralVisit(row = {}) {
+  const ref = normalizeReferralName(row.ref || row.referralName || row.code || "");
+  const referrerWallet = normalizeSupportAddress(row.referrerWallet || "");
+  if (!ref && !referrerWallet) return null;
+  return {
+    id: String(row.id || "").trim() || `${Date.now()}-${crypto.randomBytes(3).toString("hex")}`,
+    ref,
+    referrerWallet: referrerWallet || "",
+    landingPath: String(row.landingPath || row.path || "/").slice(0, 240),
+    userAgentHash: String(row.userAgentHash || "").slice(0, 80),
+    createdAt: parseUnixTimestamp(row.createdAt || row.created_at || row.ts) || Math.floor(Date.now() / 1000)
+  };
+}
+
+function normalizeReferralRow(row = {}) {
+  const referrerWallet = normalizeSupportAddress(row.referrerWallet || row.referrer || "");
+  const referredWallet = normalizeSupportAddress(row.referredWallet || row.referred || "");
+  const referrerKey = referralWalletKey(referrerWallet);
+  const referredKey = referralWalletKey(referredWallet);
+  if (!referrerWallet || !referredWallet || !referrerKey || !referredKey || referrerKey === referredKey) return null;
+  const createdAt = parseUnixTimestamp(row.createdAt || row.created_at || row.ts) || Math.floor(Date.now() / 1000);
+  const connectedAt = parseUnixTimestamp(row.connectedAt || row.connected_at) || createdAt;
+  const firstQualifiedAt = parseUnixTimestamp(row.firstQualifiedAt || row.first_qualified_at) || 0;
+  const lastCheckedAt = parseUnixTimestamp(row.lastCheckedAt || row.last_checked_at) || 0;
+  const holderPct = Math.max(0, Number(row.holderPct || 0) || 0);
+  const balanceTokens = Math.max(0, Number(row.balanceTokens || 0) || 0);
+  const holdingSeconds = Math.max(0, Number(row.holdingSeconds || 0) || 0);
+  return {
+    id: String(row.id || `${referrerKey}:${referredKey}`).slice(0, 160),
+    referrerWallet,
+    referredWallet,
+    referrerKey,
+    referredKey,
+    referralName: normalizeReferralName(row.referralName || row.code || ""),
+    landingPath: String(row.landingPath || "/").slice(0, 240),
+    source: String(row.source || "referral").slice(0, 80),
+    status: String(row.status || "connected").slice(0, 40),
+    tier: String(row.tier || "Pending").slice(0, 40),
+    score: Math.max(0, Math.floor(Number(row.score || 0) || 0)),
+    rewardEstimatePumpr: Math.max(0, Math.floor(Number(row.rewardEstimatePumpr || 0) || 0)),
+    balanceTokens,
+    balanceRaw: String(row.balanceRaw || ""),
+    holderPct,
+    holdingSeconds,
+    createdAt,
+    connectedAt,
+    firstQualifiedAt,
+    lastCheckedAt,
+    payoutStatus: String(row.payoutStatus || "pending").slice(0, 40),
+    payoutTx: String(row.payoutTx || "").slice(0, 140)
+  };
+}
+
+function sanitizeReferralStore(store = {}) {
+  const profilesByWallet = new Map();
+  const names = new Set();
+  for (const row of Array.isArray(store?.profiles) ? store.profiles : []) {
+    const profile = normalizeReferralProfile(row);
+    if (!profile) continue;
+    let name = profile.name;
+    if (!name || names.has(name) || reservedReferralNames().has(name)) {
+      name = defaultReferralName(profile.wallet, names);
+    }
+    profile.name = name;
+    names.add(name);
+    profilesByWallet.set(profile.key, profile);
+  }
+
+  const referralsByReferred = new Map();
+  for (const row of Array.isArray(store?.referrals) ? store.referrals : []) {
+    const referral = normalizeReferralRow(row);
+    if (!referral) continue;
+    const existing = referralsByReferred.get(referral.referredKey);
+    if (!existing || Number(referral.createdAt || 0) < Number(existing.createdAt || 0)) {
+      referralsByReferred.set(referral.referredKey, referral);
+    }
+  }
+
+  const visits = (Array.isArray(store?.visits) ? store.visits : [])
+    .map((row) => normalizeReferralVisit(row))
+    .filter(Boolean)
+    .sort((a, b) => Number(b.createdAt || 0) - Number(a.createdAt || 0))
+    .slice(0, 5000);
+
+  return {
+    profiles: [...profilesByWallet.values()].sort((a, b) => String(a.name).localeCompare(String(b.name))),
+    referrals: [...referralsByReferred.values()].sort((a, b) => Number(b.connectedAt || b.createdAt || 0) - Number(a.connectedAt || a.createdAt || 0)),
+    visits,
+    payouts: (Array.isArray(store?.payouts) ? store.payouts : []).slice(-2000),
+    updatedAt: parseUnixTimestamp(store?.updatedAt) || Math.floor(Date.now() / 1000)
+  };
+}
+
+function readReferralDb() {
+  if (referralDbCache && typeof referralDbCache === "object") return referralDbCache;
+  try {
+    if (fs.existsSync(REFERRAL_DB_PATH)) {
+      referralDbCache = sanitizeReferralStore(JSON.parse(fs.readFileSync(REFERRAL_DB_PATH, "utf8") || "{}"));
+      return referralDbCache;
+    }
+  } catch {
+    // fall through
+  }
+  referralDbCache = emptyReferralStore();
+  return referralDbCache;
+}
+
+function writeReferralDb(store) {
+  const safe = sanitizeReferralStore(store);
+  safe.updatedAt = Math.floor(Date.now() / 1000);
+  try {
+    fs.mkdirSync(path.dirname(REFERRAL_DB_PATH), { recursive: true });
+    fs.writeFileSync(REFERRAL_DB_PATH, JSON.stringify(safe, null, 2));
+  } catch {
+    // /tmp/local cache failures should not block remote storage attempts.
+  }
+  referralDbCache = safe;
+  return safe;
+}
+
+async function readReferralDbRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_REFERRAL_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_REFERRAL_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase referral read failed: ${response.status}`);
+  return sanitizeReferralStore(await response.json().catch(() => emptyReferralStore()));
+}
+
+async function writeReferralDbRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_REFERRAL_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_REFERRAL_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizeReferralStore(store), null, 2)
+  });
+  if (!response.ok) throw new Error(`Supabase referral write failed: ${response.status}`);
+  return true;
+}
+
+async function readReferralDbPersistent(options = {}) {
+  const refresh = Boolean(options.refresh);
+  if (isSupabaseStorageConfigured() && (refresh || !referralDbRemoteLoaded)) {
+    try {
+      const remote = await readReferralDbRemote();
+      if (remote) writeReferralDb(remote);
+      referralDbRemoteLoaded = true;
+    } catch (error) {
+      console.warn(`Supabase referral read failed: ${error?.message || "connection error"}`);
+      referralDbRemoteLoaded = true;
+    }
+  }
+  return sanitizeReferralStore(readReferralDb());
+}
+
+async function writeReferralDbPersistent(store) {
+  assertJsonStoreConfigured("Referral", SUPABASE_REFERRAL_OBJECT);
+  const safe = writeReferralDb(store);
+  if (isSupabaseStorageConfigured()) {
+    await writeReferralDbRemote(safe);
+  }
+  return safe;
+}
+
+function referralProfileForWallet(store, wallet, options = {}) {
+  const normalized = normalizeSupportAddress(wallet);
+  const key = referralWalletKey(normalized);
+  if (!normalized || !key) return null;
+  let profile = (store.profiles || []).find((row) => row.key === key) || null;
+  if (!profile && options.create) {
+    const used = new Set((store.profiles || []).map((row) => row.name).filter(Boolean));
+    profile = normalizeReferralProfile({
+      wallet: normalized,
+      name: defaultReferralName(normalized, used),
+      createdAt: Math.floor(Date.now() / 1000),
+      updatedAt: Math.floor(Date.now() / 1000)
+    });
+    store.profiles = [...(store.profiles || []), profile];
+  }
+  return profile;
+}
+
+function findReferralProfileByRef(store, ref = "") {
+  const text = String(ref || "").trim();
+  const name = normalizeReferralName(text);
+  if (name) {
+    const byName = (store.profiles || []).find((row) => row.name === name);
+    if (byName) return byName;
+  }
+  const wallet = normalizeSupportAddress(text);
+  const key = referralWalletKey(wallet);
+  return key ? (store.profiles || []).find((row) => row.key === key) || normalizeReferralProfile({ wallet, name: "" }) : null;
+}
+
+function referralTierFor({ holderPct = 0, balanceTokens = 0, holdingSeconds = 0 } = {}) {
+  const pct = Number(holderPct || 0);
+  const balance = Number(balanceTokens || 0);
+  const seconds = Number(holdingSeconds || 0);
+  if (pct >= 1 && seconds >= 24 * 60 * 60) return { tier: "Diamond", status: "qualified", score: 500, rewardEstimatePumpr: 50000 };
+  if (pct >= 1) return { tier: "Gold", status: "qualified", score: 300, rewardEstimatePumpr: 25000 };
+  if (pct >= 0.25) return { tier: "Silver", status: "qualified", score: 120, rewardEstimatePumpr: 10000 };
+  if (balance > 0) return { tier: "Bronze", status: "holding", score: 40, rewardEstimatePumpr: 2500 };
+  return { tier: "Pending", status: "connected", score: 0, rewardEstimatePumpr: 0 };
+}
+
+async function refreshReferralQualifications(store = null) {
+  const safeStore = store || (await readReferralDbPersistent({ refresh: true }));
+  const official = officialAirdropConfig();
+  const now = Math.floor(Date.now() / 1000);
+  let holderPayload = null;
+  let holders = [];
+  try {
+    if (official.configured && official.chainId === 101) {
+      holderPayload = await buildSolanaAirdropPreview(official.token, 50);
+      holders = Array.isArray(holderPayload?.allocations) ? holderPayload.allocations : [];
+    }
+  } catch (error) {
+    console.warn(`Referral holder refresh failed: ${error?.message || "connection error"}`);
+  }
+
+  const holderByKey = new Map();
+  for (const holder of holders) {
+    const key = referralWalletKey(holder.address);
+    if (key) holderByKey.set(key, holder);
+  }
+
+  if (official.configured && official.chainId === 101) {
+    const missingWallets = [];
+    const seenMissing = new Set();
+    for (const row of safeStore.referrals || []) {
+      const referral = normalizeReferralRow(row);
+      if (!referral?.referredWallet || !referral.referredKey || holderByKey.has(referral.referredKey)) continue;
+      if (seenMissing.has(referral.referredKey)) continue;
+      seenMissing.add(referral.referredKey);
+      missingWallets.push(referral.referredWallet);
+    }
+
+    await mapWithConcurrency(missingWallets.slice(0, 250), 4, async (wallet) => {
+      try {
+        const eligibility = await readSolanaOfficialHolderEligibility(official, wallet);
+        const key = referralWalletKey(wallet);
+        const balanceTokens = Number(eligibility?.balanceTokens || 0);
+        if (key && balanceTokens > 0) {
+          holderByKey.set(key, {
+            address: wallet,
+            balanceTokens,
+            balanceWei: String(eligibility.balanceRaw || "0"),
+            holderPct: Number(eligibility.holderPct || 0),
+            firstSeenAt: now
+          });
+        }
+      } catch (error) {
+        console.warn(`Referral wallet balance check failed for ${wallet}: ${error?.message || "connection error"}`);
+      }
+    });
+  }
+
+  safeStore.referrals = (safeStore.referrals || [])
+    .map((row) => {
+      const referral = normalizeReferralRow(row);
+      if (!referral) return null;
+      const holder = holderByKey.get(referral.referredKey);
+      const balanceTokens = Number(holder?.balanceTokens || 0);
+      const holderPct = Number(holder?.holderPct || 0);
+      const balanceRaw = String(holder?.balanceWei || referral.balanceRaw || "0");
+      const firstQualifiedAt = balanceTokens > 0 ? Number(referral.firstQualifiedAt || holder?.firstSeenAt || now) : Number(referral.firstQualifiedAt || 0);
+      const holdingSeconds = balanceTokens > 0 ? Math.max(0, now - Math.max(0, Number(firstQualifiedAt || now))) : 0;
+      const tier = referralTierFor({ holderPct, balanceTokens, holdingSeconds });
+      return {
+        ...referral,
+        ...tier,
+        balanceTokens,
+        balanceRaw,
+        holderPct,
+        holdingSeconds,
+        firstQualifiedAt,
+        lastCheckedAt: now
+      };
+    })
+    .filter(Boolean);
+  safeStore.updatedAt = now;
+  const written = await writeReferralDbPersistent(safeStore);
+  return { store: written, official, holderPayload, refreshedAt: now };
+}
+
+function referralStatsForWallet(store, wallet) {
+  const key = referralWalletKey(wallet);
+  const rows = (store.referrals || []).filter((row) => row.referrerKey === key);
+  return {
+    invited: rows.length,
+    connected: rows.filter((row) => row.status !== "visited").length,
+    holding: rows.filter((row) => Number(row.balanceTokens || 0) > 0).length,
+    qualified: rows.filter((row) => ["Bronze", "Silver", "Gold", "Diamond"].includes(row.tier)).length,
+    goldOrBetter: rows.filter((row) => ["Gold", "Diamond"].includes(row.tier)).length,
+    score: rows.reduce((sum, row) => sum + Number(row.score || 0), 0),
+    rewardEstimatePumpr: rows.reduce((sum, row) => sum + Number(row.rewardEstimatePumpr || 0), 0)
+  };
+}
+
+function publicReferralRow(row = {}) {
+  return {
+    id: row.id,
+    referredWallet: row.referredWallet,
+    referralName: row.referralName,
+    status: row.status,
+    tier: row.tier,
+    score: row.score,
+    rewardEstimatePumpr: row.rewardEstimatePumpr,
+    balanceTokens: row.balanceTokens,
+    holderPct: row.holderPct,
+    holdingSeconds: row.holdingSeconds,
+    connectedAt: row.connectedAt,
+    firstQualifiedAt: row.firstQualifiedAt,
+    lastCheckedAt: row.lastCheckedAt,
+    payoutStatus: row.payoutStatus,
+    payoutTx: row.payoutTx
+  };
+}
+
+async function ensureReferralProfile(wallet) {
+  const normalized = normalizeSupportAddress(wallet);
+  if (!normalized) throw new Error("Connect a valid wallet to create a referral link");
+  const store = await readReferralDbPersistent({ refresh: true });
+  const profile = referralProfileForWallet(store, normalized, { create: true });
+  await writeReferralDbPersistent(store);
+  return { store: await readReferralDbPersistent(), profile };
 }
 
 function emptyAlphaStore() {
@@ -7179,6 +7591,220 @@ app.get("/api/airdrop/official", (_req, res) => {
   res.json(official);
 });
 
+function referralBaseUrl(req) {
+  const configured = String(process.env.PUBLIC_BASE_URL || process.env.APP_BASE_URL || process.env.NEXT_PUBLIC_APP_URL || "").trim();
+  if (configured) return configured.replace(/\/+$/, "");
+  const proto = req.get("x-forwarded-proto") || req.protocol || "https";
+  const host = req.get("x-forwarded-host") || req.get("host") || "pump-r.fun";
+  return `${proto}://${host}`.replace(/\/+$/, "");
+}
+
+function publicReferralPayload(req, store, profile, options = {}) {
+  const wallet = normalizeSupportAddress(profile?.wallet || "");
+  const referrals = (store.referrals || []).filter((row) => row.referrerKey === referralWalletKey(wallet));
+  const stats = referralStatsForWallet(store, wallet);
+  const base = referralBaseUrl(req);
+  const name = profile?.name || "";
+  return {
+    profile,
+    link: name ? `${base}/r/${encodeURIComponent(name)}` : "",
+    queryLink: name ? `${base}/?ref=${encodeURIComponent(name)}` : "",
+    stats,
+    referrals: referrals.map(publicReferralRow),
+    leaderboard: publicReferralLeaderboard(store).slice(0, 20),
+    updatedAt: store.updatedAt || 0,
+    refreshedAt: options.refreshedAt || 0,
+    rules: referralRulesPayload()
+  };
+}
+
+function referralRulesPayload() {
+  return {
+    nameRules: "Referral names are unique, 3-24 characters, lowercase letters, numbers, hyphen, or underscore.",
+    qualification: [
+      "Visitor must open your referral link or QR code.",
+      "Visitor must connect a different wallet.",
+      "The first valid referrer for a wallet wins.",
+      "Rewards only count when the referred wallet keeps holding $PUMPR at snapshot time.",
+      "Bigger and longer holders receive higher tiers."
+    ],
+    tiers: [
+      { tier: "Pending", requirement: "Connected wallet, no tracked $PUMPR balance yet", estimatePumpr: 0 },
+      { tier: "Bronze", requirement: "Holding any $PUMPR", estimatePumpr: 2500 },
+      { tier: "Silver", requirement: "Holding 0.25%+ $PUMPR", estimatePumpr: 10000 },
+      { tier: "Gold", requirement: "Holding 1%+ $PUMPR", estimatePumpr: 25000 },
+      { tier: "Diamond", requirement: "Holding 1%+ $PUMPR for 24h+", estimatePumpr: 50000 }
+    ]
+  };
+}
+
+function publicReferralLeaderboard(store) {
+  const profilesByKey = new Map((store.profiles || []).map((profile) => [profile.key, profile]));
+  const rows = [];
+  for (const profile of store.profiles || []) {
+    const stats = referralStatsForWallet(store, profile.wallet);
+    rows.push({
+      wallet: profile.wallet,
+      name: profile.name,
+      stats
+    });
+  }
+  for (const row of store.referrals || []) {
+    if (profilesByKey.has(row.referrerKey)) continue;
+    rows.push({
+      wallet: row.referrerWallet,
+      name: "",
+      stats: referralStatsForWallet(store, row.referrerWallet)
+    });
+  }
+  return rows
+    .filter((row) => Number(row.stats?.invited || 0) > 0 || Number(row.stats?.score || 0) > 0)
+    .sort((a, b) => Number(b.stats?.score || 0) - Number(a.stats?.score || 0) || Number(b.stats?.qualified || 0) - Number(a.stats?.qualified || 0))
+    .slice(0, 100);
+}
+
+app.get("/api/referrals/me/:wallet", async (req, res) => {
+  try {
+    const wallet = normalizeSupportAddress(req.params.wallet || "");
+    if (!wallet) return res.status(400).json({ error: "Valid wallet is required" });
+    const created = await ensureReferralProfile(wallet);
+    let store = created.store;
+    let refreshedAt = 0;
+    if (String(req.query.refresh || "") === "1") {
+      const refreshed = await refreshReferralQualifications(store);
+      store = refreshed.store;
+      refreshedAt = refreshed.refreshedAt;
+    }
+    const profile = referralProfileForWallet(store, wallet, { create: true });
+    res.json(publicReferralPayload(req, store, profile, { refreshedAt }));
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load referral profile" });
+  }
+});
+
+app.post("/api/referrals/name", async (req, res) => {
+  try {
+    const wallet = normalizeSupportAddress(req.body?.wallet || "");
+    const name = normalizeReferralName(req.body?.name || "");
+    if (!wallet) return res.status(400).json({ error: "Valid wallet is required" });
+    if (!name) return res.status(400).json({ error: "Use 3-24 lowercase letters, numbers, hyphen, or underscore" });
+    if (reservedReferralNames().has(name)) return res.status(409).json({ error: "That referral name is reserved" });
+
+    const store = await readReferralDbPersistent({ refresh: true });
+    const key = referralWalletKey(wallet);
+    const duplicate = (store.profiles || []).find((row) => row.name === name && row.key !== key);
+    if (duplicate) return res.status(409).json({ error: "That referral name is already taken" });
+    const profile = referralProfileForWallet(store, wallet, { create: true });
+    profile.name = name;
+    profile.updatedAt = Math.floor(Date.now() / 1000);
+    await writeReferralDbPersistent(store);
+    const nextStore = await readReferralDbPersistent({ refresh: true });
+    res.json(publicReferralPayload(req, nextStore, referralProfileForWallet(nextStore, wallet, { create: true })));
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to save referral name" });
+  }
+});
+
+app.post("/api/referrals/visit", async (req, res) => {
+  try {
+    const store = await readReferralDbPersistent({ refresh: true });
+    const ref = String(req.body?.ref || req.body?.code || "").trim();
+    const profile = findReferralProfileByRef(store, ref);
+    const visit = normalizeReferralVisit({
+      ref: normalizeReferralName(ref),
+      referrerWallet: profile?.wallet || "",
+      landingPath: req.body?.landingPath || req.body?.path || "/",
+      userAgentHash: crypto.createHash("sha256").update(String(req.get("user-agent") || "")).digest("hex").slice(0, 48),
+      createdAt: Math.floor(Date.now() / 1000)
+    });
+    if (visit) {
+      store.visits = [visit, ...(store.visits || [])].slice(0, 5000);
+      await writeReferralDbPersistent(store);
+    }
+    res.json({ ok: true, referrerWallet: profile?.wallet || "", referralName: profile?.name || normalizeReferralName(ref) });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to track referral visit" });
+  }
+});
+
+app.post("/api/referrals/connect", async (req, res) => {
+  try {
+    const referredWallet = normalizeSupportAddress(req.body?.referredWallet || req.body?.wallet || "");
+    if (!referredWallet) return res.status(400).json({ error: "Valid referred wallet is required" });
+    const store = await readReferralDbPersistent({ refresh: true });
+    const ref = String(req.body?.ref || req.body?.referralName || req.body?.code || "").trim();
+    const profile = findReferralProfileByRef(store, ref);
+    if (!profile?.wallet) return res.status(404).json({ error: "Referral was not found" });
+    if (referralWalletKey(profile.wallet) === referralWalletKey(referredWallet)) {
+      return res.status(400).json({ error: "Self-referrals do not count" });
+    }
+    const existing = (store.referrals || []).find((row) => row.referredKey === referralWalletKey(referredWallet));
+    if (!existing) {
+      const now = Math.floor(Date.now() / 1000);
+      const row = normalizeReferralRow({
+        id: `${referralWalletKey(profile.wallet)}:${referralWalletKey(referredWallet)}`,
+        referrerWallet: profile.wallet,
+        referredWallet,
+        referralName: profile.name,
+        landingPath: req.body?.landingPath || req.body?.path || "/",
+        source: req.body?.source || "wallet-connect",
+        createdAt: now,
+        connectedAt: now
+      });
+      if (row) store.referrals = [row, ...(store.referrals || [])];
+      await writeReferralDbPersistent(store);
+    }
+    const refreshed = await refreshReferralQualifications(store);
+    res.json({
+      ok: true,
+      alreadyTracked: Boolean(existing),
+      referral: publicReferralRow((refreshed.store.referrals || []).find((row) => row.referredKey === referralWalletKey(referredWallet)) || existing || {}),
+      referrerWallet: profile.wallet,
+      referralName: profile.name
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to connect referral" });
+  }
+});
+
+app.post("/api/referrals/refresh", async (_req, res) => {
+  try {
+    const refreshed = await refreshReferralQualifications();
+    res.json({
+      ok: true,
+      refreshedAt: refreshed.refreshedAt,
+      referrals: refreshed.store.referrals.length,
+      leaderboard: publicReferralLeaderboard(refreshed.store).slice(0, 50)
+    });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to refresh referrals" });
+  }
+});
+
+app.get("/api/referrals/leaderboard", async (req, res) => {
+  try {
+    let store = await readReferralDbPersistent({ refresh: true });
+    if (String(req.query.refresh || "") === "1") {
+      store = (await refreshReferralQualifications(store)).store;
+    }
+    res.json({ leaderboard: publicReferralLeaderboard(store), updatedAt: store.updatedAt || 0, rules: referralRulesPayload() });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to load referral leaderboard" });
+  }
+});
+
+app.get("/api/referrals/cron", async (req, res) => {
+  try {
+    const expected = String(process.env.CRON_SECRET || process.env.REFERRAL_CRON_SECRET || "").trim();
+    const provided = String(req.get("authorization") || "").replace(/^Bearer\s+/i, "").trim() || String(req.query.secret || "").trim();
+    if (expected && provided !== expected) return res.status(403).json({ error: "Invalid cron secret" });
+    const refreshed = await refreshReferralQualifications();
+    res.json({ ok: true, refreshedAt: refreshed.refreshedAt, referrals: refreshed.store.referrals.length });
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Failed to refresh referral cron" });
+  }
+});
+
 app.get("/api/holder/eligibility", async (req, res) => {
   try {
     const eligibility = await readOfficialHolderEligibility({
@@ -9320,6 +9946,10 @@ app.get("/onboard", (_req, res) => {
 
 app.get("/airdrop", (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "airdrop.html"));
+});
+
+app.get(["/referrals", "/r/:ref"], (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "referrals.html"));
 });
 
 app.get("/profile", (_req, res) => {

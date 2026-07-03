@@ -28,6 +28,8 @@ export function setAlert(el, message, isError = false) {
 
 let copyToastEl = null;
 let copyToastTimer = null;
+const REFERRAL_PENDING_KEY = "pumpr.referral.pending.v1";
+const REFERRAL_CONNECT_SESSION_KEY = "pumpr.referral.connect.sent.v1";
 const COPY_TOAST_ICON = `
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <circle cx="10" cy="10" r="7.5"></circle>
@@ -805,6 +807,53 @@ function avatarTextForGeneratedWallet(generated = {}) {
   return label ? label.slice(0, 2).toUpperCase() : "SOL";
 }
 
+function readPendingReferral() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(REFERRAL_PENDING_KEY) || "{}");
+    const ref = String(parsed?.ref || "").trim().toLowerCase();
+    const ts = Number(parsed?.ts || 0);
+    if (!ref || !ts || Date.now() - ts > 7 * 86400 * 1000) return null;
+    return {
+      ref,
+      landingPath: String(parsed?.landingPath || "/").slice(0, 240)
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function connectPendingReferral(address = "") {
+  const wallet = String(address || "").trim();
+  if (!wallet) return;
+  const pending = readPendingReferral();
+  if (!pending) return;
+  const sessionKey = `${pending.ref}:${wallet}`;
+  try {
+    if (sessionStorage.getItem(REFERRAL_CONNECT_SESSION_KEY) === sessionKey) return;
+    sessionStorage.setItem(REFERRAL_CONNECT_SESSION_KEY, sessionKey);
+  } catch {
+    // ignore
+  }
+  try {
+    const res = await fetch("/api/referrals/connect", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        ref: pending.ref,
+        referredWallet: wallet,
+        landingPath: pending.landingPath,
+        source: "shared-wallet-connect"
+      }),
+      keepalive: true
+    });
+    if (res.ok) {
+      localStorage.removeItem(REFERRAL_PENDING_KEY);
+    }
+  } catch {
+    // Referral tracking should never block wallet sign-in.
+  }
+}
+
 async function handleSharedSocialAuthReturn({ labelEl, alertEl, notifyConnected } = {}) {
   const params = new URLSearchParams(window.location.search);
   const status = params.get("x");
@@ -932,6 +981,7 @@ export function initTopbarWalletProfile({
       setSharedAvatar(els.profileAvatar, avatarTextForGeneratedWallet(generated), generated.image || "");
       setSharedAvatar(els.profileAvatarLarge, avatarTextForGeneratedWallet(generated), generated.image || "");
       walletHub?.refresh();
+      connectPendingReferral(generated.address || solana.address);
       if (typeof onChange === "function") await onChange();
       return;
     }
@@ -944,6 +994,7 @@ export function initTopbarWalletProfile({
       setSharedAvatar(els.profileAvatar, "SOL", "");
       setSharedAvatar(els.profileAvatarLarge, "SOL", "");
       walletHub?.setOpen(false);
+      connectPendingReferral(solana.address);
       if (typeof onChange === "function") await onChange();
       return;
     }
@@ -957,6 +1008,7 @@ export function initTopbarWalletProfile({
     setSharedAvatar(els.profileAvatar, name, imageUri);
     setSharedAvatar(els.profileAvatarLarge, name, imageUri);
     walletHub?.refresh();
+    connectPendingReferral(ws.address);
     if (typeof onChange === "function") await onChange();
   };
 

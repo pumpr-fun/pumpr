@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+    <meta http-equiv="Pragma" content="no-cache" />
+    <meta http-equiv="Expires" content="0" />
+    <title>Pump-r.fun | Referrals</title>
+    <link rel="icon" type="image/png" href="/assets/favicon.png?v=20260609brand" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260703referrals" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="appSidebar">
+        <div class="sidebar-top">
+          <a class="logo" href="/">
+            <img class="logo-mark" src="/assets/pump-r-logo.png?v=20260609brand" alt="Pump-r logo" />
+            <span class="logo-title"><span class="logo-name">Pump-r</span><span class="logo-sep">.</span><span class="logo-tld">fun</span></span>
+          </a>
+          <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true">
+            <svg viewBox="0 0 20 12" aria-hidden="true"><rect x="1.5" y="1" width="1.5" height="10" rx="0.75"></rect><rect x="17" y="1" width="1.5" height="10" rx="0.75"></rect><path d="M11.2 3.2L8.2 6l3 2.8"></path></svg>
+          </button>
+        </div>
+        <nav class="side-nav">
+          <a class="side-link side-link-home" href="/"><span class="side-icon" aria-hidden="true"></span><span class="side-link-label">Home</span></a>
+          <a class="side-link" href="/airdrop"><span class="side-icon" aria-hidden="true"></span><span class="side-link-label">Airdrop</span></a>
+          <a class="side-link active" href="/referrals"><span class="side-icon" aria-hidden="true"></span><span class="side-link-label">Referrals</span></a>
+        </nav>
+        <a class="side-create-btn" href="/create">Create</a>
+        <div class="side-footer"><span id="networkChip">SOL</span><span id="factoryChip">PUMPR</span></div>
+      </aside>
+
+      <main class="main-pane referral-page">
+        <div class="promo-strip home-contract-strip">
+          <span>Pump Fun Remastered is better</span>
+          <a href="https://pump.fun/coin/C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump" target="_blank" rel="noopener noreferrer">
+            CA: C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump
+          </a>
+        </div>
+        <header class="topbar create-topbar">
+          <div class="create-searchbar">
+            <a href="/" class="create-back-btn" aria-label="Back to home">&larr;</a>
+            <input value="$PUMPR referral rewards" readonly aria-label="$PUMPR referral rewards" />
+          </div>
+          <div class="top-actions">
+            <a class="btn-ghost top-action-btn" href="/airdrop">Airdrop</a>
+            <button id="signInBtn" class="btn-primary top-action-btn sign-in-btn" type="button">Sign in</button>
+          </div>
+        </header>
+
+        <section class="referral-shell">
+          <section class="referral-hero panel-card">
+            <div class="referral-hero-copy">
+              <small>Automated holder referrals</small>
+              <h1>Invite real $PUMPR holders</h1>
+              <p>
+                Share your link or QR. When a new wallet connects through it and keeps holding $PUMPR,
+                your referral tier and reward estimate update automatically from live holder snapshots.
+              </p>
+            </div>
+            <div class="referral-hero-stats">
+              <span><b id="referralHeroTier">Connect</b><small>Your tier</small></span>
+              <span><b id="referralHeroQualified">0</b><small>Qualified</small></span>
+              <span><b id="referralHeroReward">0</b><small>$PUMPR est.</small></span>
+            </div>
+          </section>
+
+          <section class="referral-grid">
+            <article class="panel-card referral-link-card">
+              <div class="referral-card-head">
+                <div>
+                  <small>Your referral</small>
+                  <h2>Link and QR</h2>
+                </div>
+                <button id="referralRefreshBtn" class="btn-ghost" type="button">Refresh</button>
+              </div>
+              <label class="referral-name-label">
+                <span>Referral name</span>
+                <div class="referral-name-row">
+                  <input id="referralNameInput" maxlength="24" placeholder="connect wallet" />
+                  <button id="referralNameSaveBtn" class="btn-primary" type="button">Save</button>
+                </div>
+              </label>
+              <div class="referral-link-box">
+                <button id="referralLinkBtn" type="button">Connect wallet to generate link</button>
+              </div>
+              <div id="referralQrWrap" class="referral-qr-wrap">
+                <canvas id="referralQrCanvas" width="220" height="220" aria-label="Referral QR"></canvas>
+                <div>
+                  <strong>Scan to join through you</strong>
+                  <span id="referralQrMeta">QR appears after sign in.</span>
+                </div>
+              </div>
+              <p id="referralStatus" class="referral-status" role="status"></p>
+            </article>
+
+            <article class="panel-card referral-tier-card">
+              <small>Wallet tier</small>
+              <h2 id="referralTierName">Not connected</h2>
+              <p id="referralTierCopy">Connect a wallet to see your referral tier and current score.</p>
+              <div class="referral-score-ring">
+                <span id="referralScoreValue">0</span>
+                <small>score</small>
+              </div>
+              <div class="referral-stat-list">
+                <span><b id="referralInvited">0</b><small>Invited</small></span>
+                <span><b id="referralHolding">0</b><small>Holding</small></span>
+                <span><b id="referralGold">0</b><small>Gold+</small></span>
+              </div>
+            </article>
+          </section>
+
+          <section class="panel-card referral-how-card">
+            <div>
+              <small>How it works</small>
+              <h2>Automated, holder-first rewards</h2>
+            </div>
+            <ol>
+              <li>Share your unique link or QR code.</li>
+              <li>A new wallet opens it and connects on Pump-r.</li>
+              <li>The first valid referrer is locked for that wallet.</li>
+              <li>The backend refreshes $PUMPR holders and scores the referral.</li>
+              <li>Only wallets still holding at snapshot time count toward rewards.</li>
+            </ol>
+          </section>
+
+          <section class="referral-grid referral-lower-grid">
+            <article class="panel-card referral-table-card">
+              <div class="referral-card-head">
+                <div>
+                  <small>Your referred wallets</small>
+                  <h2>Live status</h2>
+                </div>
+                <span id="referralUpdatedAt">-</span>
+              </div>
+              <div id="referralRows" class="referral-table-empty">Connect wallet to load referrals.</div>
+            </article>
+
+            <article class="panel-card referral-leaderboard-card">
+              <div class="referral-card-head">
+                <div>
+                  <small>Leaderboard</small>
+                  <h2>Top inviters</h2>
+                </div>
+              </div>
+              <div id="referralLeaderboard" class="referral-leaderboard-list"></div>
+            </article>
+          </section>
+
+          <section class="panel-card referral-rules-card">
+            <small>Reward tiers</small>
+            <div id="referralRules" class="referral-rule-grid"></div>
+          </section>
+        </section>
+      </main>
+    </div>
+
+    <script src="/js/sidebar.js?v=20260703referrals"></script>
+    <script type="module" src="/js/referrals.js?v=20260703referrals"></script>
+  </body>
+</html>

@@ -1,5 +1,6 @@
 (() => {
   const STORAGE_KEY = "etherpump.sidebar.compact.v1";
+  const REFERRAL_PENDING_KEY = "pumpr.referral.pending.v1";
   const WALLET_SESSION_KEY = "etherpump.wallet.session.v1";
   const CHAIN_PREFERENCE_KEY = "etherpump.chain.preferred.v1";
   const ETH_USD_CACHE_KEY = "etherpump.ethusd.v1";
@@ -18,6 +19,7 @@
     alpha: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h8l3 6-7 10-7-10 3-6z"></path><path d="M8 10h8"></path><path d="M12 4v16"></path></svg>',
     agents: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3.5v4"></path><path d="M7 7.5h10a3 3 0 0 1 3 3v5.5a3 3 0 0 1-3 3H7a3 3 0 0 1-3-3v-5.5a3 3 0 0 1 3-3z"></path><path d="M9 13h.01"></path><path d="M15 13h.01"></path><path d="M9.5 16c1.4.8 3.6.8 5 0"></path></svg>',
     airdrop: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v14"></path><path d="M7 8l5-5 5 5"></path><path d="M4 17.5h16"></path><path d="M6.5 21h13"></path></svg>',
+    referral: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M15 7h2.5a3.5 3.5 0 0 1 0 7H15"></path><path d="M9 17H6.5a3.5 3.5 0 0 1 0-7H9"></path><path d="M8 12h8"></path><path d="M12 4v3"></path><path d="M12 17v3"></path></svg>',
     card: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5.5" width="18" height="13" rx="2.4"></rect><path d="M3 10h18"></path><path d="M7 15h4"></path><path d="M15.5 15h1.5"></path></svg>',
     profile: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8.2" r="3.7"></circle><path d="M4.6 20c1.8-3.9 4.4-5.9 7.4-5.9s5.6 2 7.4 5.9"></path></svg>',
     communities: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round"><path d="M7 11.5a4 4 0 1 1 8 0"></path><path d="M4.5 20c1.2-3 3.7-4.5 6.5-4.5s5.3 1.5 6.5 4.5"></path><path d="M17 8.2a3 3 0 0 1 3 3"></path><path d="M18.5 15.2c1.2.6 2 1.7 2.5 3.1"></path></svg>',
@@ -31,12 +33,49 @@
     { key: "alpha", href: "/alpha", label: "Alpha Tips" },
     { key: "agents", href: "/agents", label: "Agents" },
     { key: "airdrop", href: "/airdrop", label: "Airdrop" },
+    { key: "referral", href: "/referrals", label: "Referrals", match: (path) => path === "/referrals" || path.startsWith("/r/") },
     { key: "card", href: "/pumpr-card", label: "PUMPR Card" },
     { key: "profile", href: "/profile", label: "Profile", id: "profileNavSide" },
     { key: "communities", href: "/communities", label: "Communities" },
     { key: "support", href: "#", label: "Support", id: "supportSideLink", className: "side-link-support", findByLabel: true },
     { key: "terminal", href: "https://trade.padre.gg/", label: "Terminal", external: true }
   ];
+
+  function normalizeReferralCode(value) {
+    return String(value || "")
+      .trim()
+      .toLowerCase()
+      .replace(/^@+/, "")
+      .replace(/[^a-z0-9_-]+/g, "-")
+      .replace(/-+/g, "-")
+      .replace(/^[-_]+|[-_]+$/g, "")
+      .slice(0, 24);
+  }
+
+  function captureReferralLanding() {
+    try {
+      const params = new URLSearchParams(window.location.search || "");
+      const pathMatch = String(window.location.pathname || "").match(/^\/r\/([^/?#]+)/i);
+      const ref = normalizeReferralCode(params.get("ref") || params.get("r") || params.get("referral") || decodeURIComponent(pathMatch?.[1] || ""));
+      if (!ref) return;
+      const pending = {
+        ref,
+        landingPath: `${window.location.pathname || "/"}${window.location.search || ""}`,
+        ts: Date.now()
+      };
+      localStorage.setItem(REFERRAL_PENDING_KEY, JSON.stringify(pending));
+      fetch("/api/referrals/visit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(pending),
+        keepalive: true
+      }).catch(() => {});
+    } catch {
+      // Referral capture should never block navigation.
+    }
+  }
+
+  captureReferralLanding();
 
   function linkLabel(link) {
     return link?.querySelector(".side-link-label")?.textContent?.trim() || link?.textContent?.trim() || "";

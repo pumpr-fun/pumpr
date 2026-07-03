@@ -38,7 +38,7 @@ export async function apiGet(path) {
 export async function apiPost(path, body) {
   const target = withPreferredChain(path);
   const ctrl = new AbortController();
-  const timeoutMs = path.startsWith("/api/pumpfun/") || path.startsWith("/api/agents/") ? 60000 : 15000;
+  const timeoutMs = path.startsWith("/api/pumpfun/") || path.startsWith("/api/agents/") || path.startsWith("/api/referrals/") ? 60000 : 15000;
   const timeout = setTimeout(() => ctrl.abort(), timeoutMs);
   const res = await fetch(target, {
     method: "POST",
@@ -217,6 +217,17 @@ export const api = {
     if (Number.isFinite(Number(options.targetChainId))) params.set("targetChainId", String(Math.floor(Number(options.targetChainId))));
     return apiGet(`/api/holder/eligibility?${params.toString()}`);
   },
+  referralMe: (wallet, options = {}) => {
+    const params = new URLSearchParams();
+    if (options.refresh) params.set("refresh", "1");
+    const qs = params.toString();
+    return apiGet(`/api/referrals/me/${encodeURIComponent(String(wallet || ""))}${qs ? `?${qs}` : ""}`);
+  },
+  saveReferralName: (body = {}) => apiPost("/api/referrals/name", body),
+  referralVisit: (body = {}) => apiPost("/api/referrals/visit", body),
+  referralConnect: (body = {}) => apiPost("/api/referrals/connect", body),
+  refreshReferrals: () => apiPost("/api/referrals/refresh", {}),
+  referralLeaderboard: (options = {}) => apiGet(`/api/referrals/leaderboard${options.refresh ? "?refresh=1" : ""}`),
   airdropPreview: (options = {}) => {
     const params = new URLSearchParams();
     if (options.token) params.set("token", String(options.token));
