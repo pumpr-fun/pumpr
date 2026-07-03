@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260702authsync";
+import { api } from "./api.js?v=20260703sharedauth";
 import {
   connectSocialWallet,
   defaultUsername,
@@ -11,9 +11,9 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260702authsync";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260702authsync";
-import { initSupportWidget } from "./support.js?v=20260702authsync";
+} from "./core.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703sharedauth";
+import { initSupportWidget } from "./support.js?v=20260703sharedauth";
 
 const ui = {
   alert: document.getElementById("alert"),

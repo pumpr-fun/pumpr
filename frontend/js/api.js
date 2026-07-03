@@ -1,4 +1,4 @@
-import { getPreferredChainId } from "./core.js?v=20260702authsync";
+import { getPreferredChainId } from "./core.js?v=20260703sharedauth";
 
 function withPreferredChain(path) {
   const chainId = getPreferredChainId();

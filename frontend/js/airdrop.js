@@ -1,6 +1,6 @@
-import { api } from "./api.js?v=20260702authsync";
-import { parseUiError, shortAddress } from "./core.js?v=20260702authsync";
-import { setAlert } from "./ui.js?v=20260702authsync";
+import { api } from "./api.js?v=20260703sharedauth";
+import { parseUiError, shortAddress } from "./core.js?v=20260703sharedauth";
+import { setAlert } from "./ui.js?v=20260703sharedauth";
 
 const ui = {
   officialTop: document.getElementById("airdropOfficialTop"),

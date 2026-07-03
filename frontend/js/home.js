@@ -1,8 +1,7 @@
-import { api } from "./api.js?v=20260702authsync";
+import { api } from "./api.js?v=20260703sharedauth";
 import {
   CHAIN_OPTIONS,
   defaultUsername,
-  disconnectWallet,
   fetchEthUsdPrice,
   formatCompactUsd,
   hydrateFollowerCount,
@@ -18,10 +17,10 @@ import {
   shortAddress,
   walletState,
   weiToUsd
-} from "./core.js?v=20260702authsync";
-import { initWalletControls, initWalletHubMenu, setAlert } from "./ui.js?v=20260702authsync";
-import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260702authsync";
-import { initSupportWidget } from "./support.js?v=20260702authsync";
+} from "./core.js?v=20260703sharedauth";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703sharedauth";
+import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
+import { initSupportWidget } from "./support.js?v=20260703sharedauth";
 
 const WATCHLIST_KEY = "etherpump.watchlist.v1";
 const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
@@ -1181,7 +1180,7 @@ function updateProfileIdentity() {
   const generatedConnected = Boolean(ws.generatedWallet?.address);
   const generated = ws.generatedWallet || null;
   const solanaConnected = Boolean(ws.solanaAddress);
-  const connected = evmConnected || solanaConnected;
+  const connected = evmConnected || solanaConnected || generatedConnected;
   const profile = evmConnected ? loadUserProfile(ws.address) : { username: "Guest", imageUri: "", bio: "" };
   const generatedName = generatedConnected
     ? String(generated.name || (generated.username ? `@${generated.username}` : "") || generated.email || "")
@@ -1301,13 +1300,6 @@ function readFileAsDataUrl(file) {
 }
 
 function setupProfileMenu() {
-  ui.profileMenuBtn?.addEventListener("click", (event) => {
-    event.stopPropagation();
-    walletHub?.setOpen(false);
-    const isOpen = ui.profileMenu?.classList.contains("open");
-    setProfileMenuOpen(!isOpen);
-  });
-
   document.addEventListener("click", (event) => {
     if (!ui.profileMenu || !ui.profileMenuBtn) return;
     if (!ui.profileMenu.classList.contains("open")) return;
@@ -1320,20 +1312,6 @@ function setupProfileMenu() {
       setProfileMenuOpen(false);
       hideEditProfileModal();
     }
-  });
-
-  ui.menuLogoutBtn?.addEventListener("click", () => {
-    const ws = walletState();
-    if (!ws.signer && !ws.address && !ws.solanaAddress) {
-      setAlert(ui.alert, "Wallet already disconnected");
-      setProfileMenuOpen(false);
-      return;
-    }
-    disconnectWallet();
-    setProfileMenuOpen(false);
-    updateProfileIdentity();
-    walletHub?.refresh();
-    setAlert(ui.alert, "Wallet disconnected");
   });
 
   ui.editProfileBtn?.addEventListener("click", () => {
@@ -1656,73 +1634,22 @@ async function loadConfig() {
 }
 
 async function init() {
-  walletHub = initWalletHubMenu({
-    triggerEl: ui.walletHubBtn,
-    menuEl: ui.walletHubMenu,
-    balanceEl: ui.walletHubBalance,
-    balanceLargeEl: ui.walletHubBalanceLarge,
-    nativeEl: ui.walletHubNative,
-    addressBtnEl: ui.walletHubAddressBtn,
-    historyLinkEl: ui.walletHubHistoryLink,
-    depositBtnEl: ui.walletHubDepositBtn,
-    tradeLinkEl: ui.walletHubTradeLink,
-    buyLinkEl: ui.walletHubBuyLink,
-    depositModalEl: ui.depositModal,
-    depositCloseBtnEl: ui.depositCloseBtn,
-    depositCopyBtnEl: ui.depositCopyBtn,
-    depositAddressEl: ui.depositAddressText,
-    depositQrEl: ui.depositQrImage,
-    alertEl: ui.alert,
-    onOpen: () => setProfileMenuOpen(false)
-  });
-
-  walletControls = initWalletControls({
-    selectEl: ui.walletSelect,
-    connectBtn: ui.connectBtn,
-    disconnectBtn: ui.disconnectBtn,
-    labelEl: null,
-    alertEl: ui.alert,
-    onConnected: async () => {
-      updateProfileIdentity();
-      setProfileMenuOpen(false);
-      await walletHub?.refresh();
-    },
-    onDisconnected: async () => {
-      updateProfileIdentity();
-      setProfileMenuOpen(false);
-      await walletHub?.refresh();
-    }
-  });
-
-  ui.disconnectBtn?.addEventListener("click", () => {
+  const syncHomeWalletUi = async () => {
     updateProfileIdentity();
     setProfileMenuOpen(false);
-    walletHub?.refresh();
-  });
+    await walletHub?.refresh();
+  };
 
-  ui.connectBtn?.addEventListener("click", () => {
-    setTimeout(() => {
-      updateProfileIdentity();
-      walletHub?.refresh();
-    }, 30);
+  walletControls = initTopbarWalletProfile({
+    signInBtn: ui.signInBtn,
+    connectBtn: ui.connectBtn,
+    disconnectBtn: ui.disconnectBtn,
+    walletSelect: ui.walletSelect,
+    walletLabel: null,
+    alertEl: ui.alert,
+    onChange: syncHomeWalletUi
   });
-
-  ui.walletSelect?.addEventListener("change", () => {
-    setTimeout(() => {
-      updateProfileIdentity();
-      walletHub?.refresh();
-    }, 30);
-  });
-
-  ui.signInBtn?.addEventListener("click", async () => {
-    if (walletControls?.connect) {
-      await walletControls.connect();
-      updateProfileIdentity();
-      await walletHub?.refresh();
-      return;
-    }
-    ui.connectBtn?.click();
-  });
+  walletHub = walletControls?.walletHub || null;
 
   await walletControls?.ready?.catch(() => null);
   updateProfileIdentity();

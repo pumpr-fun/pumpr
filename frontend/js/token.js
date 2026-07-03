@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260702authsync";
+import { api } from "./api.js?v=20260703sharedauth";
 import {
   TOKEN_ABI,
   defaultUsername,
@@ -24,10 +24,10 @@ import {
   setPreferredChainId,
   shortAddress,
   walletState
-} from "./core.js?v=20260702authsync";
-import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260702authsync";
-import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260702authsync";
-import { initSupportWidget } from "./support.js?v=20260702authsync";
+} from "./core.js?v=20260703sharedauth";
+import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260703sharedauth";
+import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
+import { initSupportWidget } from "./support.js?v=20260703sharedauth";
 
 const RANGE_MS = {
   "5m": 5 * 60 * 1000,

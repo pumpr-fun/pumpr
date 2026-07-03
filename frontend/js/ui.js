@@ -18,7 +18,7 @@ import {
   solanaWalletState,
   walletState,
   parseUiError
-} from "./core.js?v=20260702authsync";
+} from "./core.js?v=20260703sharedauth";
 
 export function setAlert(el, message, isError = false) {
   if (!el) return;
@@ -878,8 +878,15 @@ export function initTopbarWalletProfile({
     walletHubNative: document.getElementById("walletHubNative"),
     walletHubAddressBtn: document.getElementById("walletHubAddressBtn"),
     walletHubExportKeyBtn: document.getElementById("walletHubExportKeyBtn"),
+    walletHubDepositBtn: document.getElementById("walletHubDepositBtn"),
     walletHubTradeLink: document.getElementById("walletHubTradeLink"),
+    walletHubBuyLink: document.getElementById("walletHubBuyLink"),
     walletHubHistoryLink: document.getElementById("walletHubHistoryLink"),
+    depositModal: document.getElementById("depositModal"),
+    depositCloseBtn: document.getElementById("depositCloseBtn"),
+    depositCopyBtn: document.getElementById("depositCopyBtn"),
+    depositAddressText: document.getElementById("depositAddressText"),
+    depositQrImage: document.getElementById("depositQrImage"),
     profileMenuBtn: document.getElementById("profileMenuBtn"),
     profileMenu: document.getElementById("profileMenu"),
     profileMenuName: document.getElementById("profileMenuName"),
@@ -904,7 +911,7 @@ export function initTopbarWalletProfile({
     const evmConnected = Boolean(ws.signer && ws.address);
     const generatedConnected = Boolean(ws.generatedWallet?.address);
     const solanaConnected = Boolean(solana.address);
-    const connected = evmConnected || solanaConnected;
+    const connected = evmConnected || solanaConnected || generatedConnected;
     if (signInBtn) signInBtn.style.display = connected ? "none" : "inline-flex";
     if (els.walletHubBtn) els.walletHubBtn.style.display = evmConnected || generatedConnected ? "inline-flex" : "none";
     if (els.profileMenuBtn) els.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
@@ -971,8 +978,15 @@ export function initTopbarWalletProfile({
     nativeEl: els.walletHubNative,
     addressBtnEl: els.walletHubAddressBtn,
     exportKeyBtnEl: els.walletHubExportKeyBtn,
+    depositBtnEl: els.walletHubDepositBtn,
     tradeLinkEl: els.walletHubTradeLink,
+    buyLinkEl: els.walletHubBuyLink,
     historyLinkEl: els.walletHubHistoryLink,
+    depositModalEl: els.depositModal,
+    depositCloseBtnEl: els.depositCloseBtn,
+    depositCopyBtnEl: els.depositCopyBtn,
+    depositAddressEl: els.depositAddressText,
+    depositQrEl: els.depositQrImage,
     alertEl,
     onOpen: () => setProfileOpen(false)
   });
