@@ -1174,6 +1174,17 @@ function setActiveFilterButton() {
   }
 }
 
+function editableProfileAddress() {
+  const ws = walletState();
+  return String(ws.generatedWallet?.address || ws.solanaAddress || ws.address || "").trim();
+}
+
+function defaultProfileUsername(address = "") {
+  const text = String(address || "").trim();
+  if (text && !text.startsWith("0x")) return `sol_${text.slice(0, 6)}`;
+  return defaultUsername(text);
+}
+
 function updateProfileIdentity() {
   const ws = walletState();
   const evmConnected = Boolean(ws.signer && ws.address);
@@ -1237,9 +1248,10 @@ function updateProfileIdentity() {
   }
 
   if (ui.editProfileBtn) {
-    ui.editProfileBtn.disabled = !evmConnected;
-    ui.editProfileBtn.style.opacity = evmConnected ? "1" : "0.6";
-    ui.editProfileBtn.style.cursor = evmConnected ? "pointer" : "not-allowed";
+    const editable = Boolean(editableProfileAddress());
+    ui.editProfileBtn.disabled = !editable;
+    ui.editProfileBtn.style.opacity = editable ? "1" : "0.6";
+    ui.editProfileBtn.style.cursor = editable ? "pointer" : "not-allowed";
   }
   if (ui.menuLogoutBtn) {
     ui.menuLogoutBtn.textContent = connected ? "Log out" : "Connect wallet";
@@ -1270,14 +1282,14 @@ function updateProfileIdentity() {
 }
 
 async function openEditProfileModal() {
-  const ws = walletState();
-  if (!ws.address) {
+  const address = editableProfileAddress();
+  if (!address) {
     setAlert(ui.alert, "Connect wallet first", true);
     return;
   }
-  await hydrateUserProfile(ws.address, { force: true });
-  const profile = loadUserProfile(ws.address);
-  if (ui.editUsername) ui.editUsername.value = profile.username || defaultUsername(ws.address);
+  await hydrateUserProfile(address, { force: true });
+  const profile = loadUserProfile(address);
+  if (ui.editUsername) ui.editUsername.value = profile.username || defaultProfileUsername(address);
   if (ui.editBio) ui.editBio.value = profile.bio || "";
   state.pendingProfileImageUri = String(profile.imageUri || "");
   updateEditAvatarPreview((profile.username || "EP").slice(0, 2).toUpperCase(), state.pendingProfileImageUri);
@@ -1320,13 +1332,13 @@ function setupProfileMenu() {
   });
 
   ui.profileShareBtn?.addEventListener("click", async () => {
-    const ws = walletState();
-    if (!ws.address) {
+    const address = editableProfileAddress();
+    if (!address) {
       setAlert(ui.alert, "Connect wallet first", true);
       return;
     }
     try {
-      const link = `${window.location.origin}/profile?address=${ws.address}`;
+      const link = `${window.location.origin}/profile?address=${encodeURIComponent(address)}`;
       await navigator.clipboard.writeText(link);
       setAlert(ui.alert, "Profile link copied");
     } catch {
@@ -1380,8 +1392,8 @@ function setupEditProfileModal() {
   });
 
   ui.saveEditProfileBtn?.addEventListener("click", async () => {
-    const ws = walletState();
-    if (!ws.address) {
+    const address = editableProfileAddress();
+    if (!address) {
       setAlert(ui.alert, "Connect wallet first", true);
       return;
     }
@@ -1391,7 +1403,7 @@ function setupEditProfileModal() {
       setAlert(ui.alert, "Username is required", true);
       return;
     }
-    const saved = await saveUserProfile(ws.address, { username, bio, imageUri: state.pendingProfileImageUri });
+    const saved = await saveUserProfile(address, { username, bio, imageUri: state.pendingProfileImageUri });
     updateProfileIdentity();
     renderTrending();
     renderExplore();
