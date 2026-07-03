@@ -3,6 +3,7 @@ import { parseUiError, shortAddress } from "./core.js?v=20260703sharedauth";
 import { setAlert } from "./ui.js?v=20260703sharedauth";
 
 const AIRDROP_HOLDER_REFRESH_MS = 30_000;
+const COMPLETED_AIRDROP_URL = "/data/pumpr-airdrop-250k.json?v=20260703drop250k";
 
 const ui = {
   officialTop: document.getElementById("airdropOfficialTop"),
@@ -20,6 +21,7 @@ const ui = {
 
 let lastPayload = null;
 let officialAirdrop = null;
+let completedAirdrop = null;
 
 function escapeHtml(value = "") {
   return String(value ?? "")
@@ -47,6 +49,26 @@ function formatHoldingAge(days = 0, snapshots = 0) {
   return "tracking";
 }
 
+function formatDateTime(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return String(value);
+  return date.toLocaleString(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "numeric",
+    minute: "2-digit"
+  });
+}
+
+function solscanTxUrl(signature = "") {
+  return `https://solscan.io/tx/${encodeURIComponent(signature)}`;
+}
+
+function completedStatusLabel(status = "") {
+  return status === "retained_by_dev_wallet_self_allocation" ? "Dev allocation retained" : "Sent";
+}
+
 function allocationCsv(payload = lastPayload) {
   const symbol = String(payload?.symbol || "TOKEN").toUpperCase();
   const rows = Array.isArray(payload?.allocations) ? payload.allocations : [];
@@ -72,16 +94,89 @@ function setStats(payload = null) {
   if (ui.chainStat) ui.chainStat.textContent = payload ? String(payload.chainName || "-") : "-";
 }
 
+function setCompletedStats() {
+  if (!completedAirdrop) return;
+  if (ui.claimableStat) ui.claimableStat.textContent = `${formatTokenAmount(completedAirdrop.totalAllocatedPumpr)} $PUMPR`;
+  if (ui.holderStat) ui.holderStat.textContent = String(completedAirdrop.eligibleHolderCount || completedAirdrop.recipients?.length || 0);
+  if (ui.chainStat) ui.chainStat.textContent = "SOL";
+}
+
+function completedAirdropHtml() {
+  const rows = Array.isArray(completedAirdrop?.recipients) ? completedAirdrop.recipients : [];
+  if (!completedAirdrop || !rows.length) return "";
+  const executed = formatDateTime(completedAirdrop.executedAt);
+  const amount = formatTokenAmount(completedAirdrop.amountPerHolderPumpr);
+  const total = formatTokenAmount(completedAirdrop.totalAllocatedPumpr);
+  const source = completedAirdrop.source || {};
+  const txLinks = (completedAirdrop.txSignatures || [])
+    .map((signature, index) => `<a href="${solscanTxUrl(signature)}" target="_blank" rel="noopener noreferrer">Batch ${index + 1}</a>`)
+    .join("");
+  return `
+    <article class="panel-card airdrop-plan-card airdrop-completed-card">
+      <div class="airdrop-plan-head">
+        <div>
+          <small>Completed drop</small>
+          <h2>${escapeHtml(completedAirdrop.title || "PUMPR loyal holder airdrop")} <span>250K each</span></h2>
+          <p>Paid to launch-day holders from the Pump.fun holder list who kept holding at least 1% through the live Solana cross-check. Executed ${escapeHtml(executed)}.</p>
+        </div>
+        <div class="airdrop-plan-actions airdrop-tx-links">
+          ${source.primaryUrl ? `<a href="${escapeHtml(source.primaryUrl)}" target="_blank" rel="noopener noreferrer">Pump.fun</a>` : ""}
+          ${txLinks}
+        </div>
+      </div>
+      <div class="airdrop-kpi-grid">
+        <span><b>${escapeHtml(total)} $PUMPR</b><small>Total allocated</small></span>
+        <span><b>${escapeHtml(String(completedAirdrop.eligibleHolderCount || rows.length))}</b><small>Eligible holders</small></span>
+        <span><b>${escapeHtml(amount)} $PUMPR</b><small>Per holder</small></span>
+      </div>
+      <div class="airdrop-source-note">
+        <strong>${escapeHtml(source.primary || "Pump.fun holder list")}</strong>
+        <span>${escapeHtml(source.crossCheck || "Cross-checked against live Solana holder accounts.")}</span>
+      </div>
+      <div class="airdrop-holder-table airdrop-completed-table">
+        <div class="airdrop-table-head">
+          <span>#</span>
+          <span>Holder</span>
+          <span>Received</span>
+          <span>Share</span>
+          <span>Holding since</span>
+          <span>Proof</span>
+        </div>
+        ${rows
+          .map((row, index) => {
+            const tx = row.signature
+              ? `<a href="${solscanTxUrl(row.signature)}" target="_blank" rel="noopener noreferrer">Solscan</a>`
+              : `<span>${escapeHtml(completedStatusLabel(row.status))}</span>`;
+            const pct = Number(row.holderPctAtSnapshot || 0).toFixed(2);
+            return `
+              <div class="airdrop-table-row">
+                <span class="airdrop-rank">${index + 1}</span>
+                <span class="airdrop-holder-address">${escapeHtml(shortAddress(row.address))}</span>
+                <strong>${escapeHtml(formatTokenAmount(row.amountPumpr || 0))} $PUMPR</strong>
+                <span>${escapeHtml(pct)}%</span>
+                <span>${escapeHtml(row.holdingSinceEt || "-")}</span>
+                <span>${tx}</span>
+              </div>
+            `;
+          })
+          .join("")}
+      </div>
+    </article>
+  `;
+}
+
 function renderEmpty(message = "The official Pumpfun Remastered mint is locked here. Current top holders are tracked over time so loyal holders can qualify for airdrops.", title = "Long-term holder tracking") {
   if (!ui.results) return;
   ui.results.innerHTML = `
+    ${completedAirdropHtml()}
     <article class="panel-card airdrop-empty-state">
       <span class="airdrop-empty-icon">0x</span>
       <h2>${escapeHtml(title)}</h2>
       <p>${escapeHtml(message)}</p>
     </article>
   `;
-  setStats(null);
+  if (completedAirdrop) setCompletedStats();
+  else setStats(null);
 }
 
 function renderPreview(payload) {
@@ -101,6 +196,7 @@ function renderPreview(payload) {
   }
 
   ui.results.innerHTML = `
+    ${completedAirdropHtml()}
     <article class="panel-card airdrop-plan-card">
       <div class="airdrop-plan-head">
         <div>
@@ -216,7 +312,19 @@ function renderOfficialAirdrop(config) {
   }
 }
 
+async function loadCompletedAirdrop() {
+  try {
+    const response = await fetch(COMPLETED_AIRDROP_URL, { cache: "no-store" });
+    if (!response.ok) return;
+    completedAirdrop = await response.json();
+    setCompletedStats();
+  } catch {
+    completedAirdrop = null;
+  }
+}
+
 async function init() {
+  await loadCompletedAirdrop();
   try {
     const config = await api.officialAirdrop();
     renderOfficialAirdrop(config);

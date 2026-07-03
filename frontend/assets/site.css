@@ -9094,6 +9094,13 @@ select:focus,
   gap: 1rem;
 }
 
+.airdrop-completed-card {
+  border-color: rgba(125, 242, 170, 0.32);
+  background:
+    radial-gradient(420px 150px at 100% 0%, rgba(125, 242, 170, 0.1), transparent 72%),
+    #141516;
+}
+
 .airdrop-plan-head h2 span {
   color: #7df2aa;
 }
@@ -9102,6 +9109,45 @@ select:focus,
   display: flex;
   flex-wrap: wrap;
   gap: 0.55rem;
+}
+
+.airdrop-tx-links a,
+.airdrop-completed-table a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 30px;
+  border: 1px solid rgba(125, 242, 170, 0.38);
+  border-radius: 7px;
+  background: rgba(125, 242, 170, 0.08);
+  color: #b9ffd1;
+  padding: 0.34rem 0.58rem;
+  font-size: 0.78rem;
+  font-weight: 900;
+  text-decoration: none;
+}
+
+.airdrop-completed-table .airdrop-table-row span:last-child {
+  color: #aeb4c4;
+  font-size: 0.78rem;
+  font-weight: 800;
+}
+
+.airdrop-source-note {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem 0.7rem;
+  align-items: center;
+  border: 1px solid rgba(125, 242, 170, 0.22);
+  border-radius: 8px;
+  background: rgba(125, 242, 170, 0.05);
+  color: #aeb4c4;
+  padding: 0.62rem 0.75rem;
+  font-size: 0.82rem;
+}
+
+.airdrop-source-note strong {
+  color: #7df2aa;
 }
 
 .airdrop-holder-table {

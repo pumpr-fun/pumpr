@@ -1,0 +1,166 @@
+{
+  "title": "PUMPR loyal holder airdrop",
+  "status": "completed",
+  "executedAt": "2026-07-03T12:47:30.675Z",
+  "mint": "C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump",
+  "source": {
+    "primary": "Pump.fun holder list",
+    "primaryUrl": "https://pump.fun/coin/C64Fr3nt6S9mmbehCS66Y1HYLnwBdMeUCdTimfmvpump",
+    "crossCheck": "Live Solana Token-2022 holder accounts and Solscan transaction proof",
+    "note": "Pump.fun excludes the bonding curve from visible holder rank; on-chain rank includes it."
+  },
+  "amountPerHolderPumpr": 250000,
+  "eligibleHolderCount": 13,
+  "totalAllocatedPumpr": 3250000,
+  "totalTransferredPumpr": 3000000,
+  "txSignatures": [
+    "5nbEm6SXpvj4aohsP8mVxnFVjUqoW61eFX9Hmpc3wwtAy8iZr6y1CTbXZQMhGvN1xN6BF9RERfKaaCZKgeQCwjDe",
+    "4jbFZUZC8bXG23tyn9i41Eog3xAfLKGBfxcJB6auFFs4xHJPCm34M3sVtcw8yAxwYtdLjCPd7EBjqQhcBTWVFtKv",
+    "4k7HaqX3thPW6446YehcGJMjTRyxa3BLppTpJHyayeb2hRaMHYKMFfRJbgyNdnqVaap1raid3mB4Xv5q8cGvcme8"
+  ],
+  "recipients": [
+    {
+      "rank": 2,
+      "pumpFunVisibleRank": 1,
+      "address": "3CSUxGJnF9urw2sTQsQV4CMquypgRKFhvKkbcxtjErCW",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 18:49:34",
+      "holdingSinceUtc": "2026-07-02T22:49:34.000Z",
+      "holderPctAtSnapshot": 2.9432,
+      "status": "sent",
+      "signature": "5nbEm6SXpvj4aohsP8mVxnFVjUqoW61eFX9Hmpc3wwtAy8iZr6y1CTbXZQMhGvN1xN6BF9RERfKaaCZKgeQCwjDe"
+    },
+    {
+      "rank": 3,
+      "pumpFunVisibleRank": 2,
+      "address": "ER4KEmk3jCeNhfV7hNTNyh2XGNpbE8Pqk9CZsBe2BJiy",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 18:46:06",
+      "holdingSinceUtc": "2026-07-02T22:46:06.000Z",
+      "holderPctAtSnapshot": 2.9417,
+      "status": "retained_by_dev_wallet_self_allocation",
+      "signature": null
+    },
+    {
+      "rank": 4,
+      "pumpFunVisibleRank": 3,
+      "address": "99aeEDd3f2tpGqdteRz97TCDweBMwPs6y423nevjUKv4",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 18:59:41",
+      "holdingSinceUtc": "2026-07-02T22:59:41.000Z",
+      "holderPctAtSnapshot": 2.9295,
+      "status": "sent",
+      "signature": "5nbEm6SXpvj4aohsP8mVxnFVjUqoW61eFX9Hmpc3wwtAy8iZr6y1CTbXZQMhGvN1xN6BF9RERfKaaCZKgeQCwjDe"
+    },
+    {
+      "rank": 5,
+      "pumpFunVisibleRank": 4,
+      "address": "4DJbjNuJbHsp3dKUDMzR8rAj7xFKzpZtD5Q7N4NS7Cwg",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 18:52:24",
+      "holdingSinceUtc": "2026-07-02T22:52:24.000Z",
+      "holderPctAtSnapshot": 2.8503,
+      "status": "sent",
+      "signature": "5nbEm6SXpvj4aohsP8mVxnFVjUqoW61eFX9Hmpc3wwtAy8iZr6y1CTbXZQMhGvN1xN6BF9RERfKaaCZKgeQCwjDe"
+    },
+    {
+      "rank": 6,
+      "pumpFunVisibleRank": 5,
+      "address": "8yMUqnEULeeUrhLXAMi4HN9HJC9SdyCUjZfaDu7BiVyK",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 18:51:01",
+      "holdingSinceUtc": "2026-07-02T22:51:01.000Z",
+      "holderPctAtSnapshot": 2.783,
+      "status": "sent",
+      "signature": "5nbEm6SXpvj4aohsP8mVxnFVjUqoW61eFX9Hmpc3wwtAy8iZr6y1CTbXZQMhGvN1xN6BF9RERfKaaCZKgeQCwjDe"
+    },
+    {
+      "rank": 9,
+      "pumpFunVisibleRank": 8,
+      "address": "2sgKwRcxSYc73Y23hQjhW95hVbFUqwVFE2EATYcu3RLN",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 18:54:38",
+      "holdingSinceUtc": "2026-07-02T22:54:38.000Z",
+      "holderPctAtSnapshot": 2.3786,
+      "status": "sent",
+      "signature": "4jbFZUZC8bXG23tyn9i41Eog3xAfLKGBfxcJB6auFFs4xHJPCm34M3sVtcw8yAxwYtdLjCPd7EBjqQhcBTWVFtKv"
+    },
+    {
+      "rank": 11,
+      "pumpFunVisibleRank": null,
+      "address": "HGctjd2dEUYUTaCfEHT9JtUp9eyG3uWnNvSh7uFHvSsx",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 19:23:24",
+      "holdingSinceUtc": "2026-07-02T23:23:24.000Z",
+      "holderPctAtSnapshot": 2.0912,
+      "status": "sent",
+      "signature": "4jbFZUZC8bXG23tyn9i41Eog3xAfLKGBfxcJB6auFFs4xHJPCm34M3sVtcw8yAxwYtdLjCPd7EBjqQhcBTWVFtKv"
+    },
+    {
+      "rank": 14,
+      "pumpFunVisibleRank": null,
+      "address": "8ZHNAiURDYctaYfV8Ch8XKcf9KQ8jfHuvmBsNiVomftN",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 19:33:21",
+      "holdingSinceUtc": "2026-07-02T23:33:21.000Z",
+      "holderPctAtSnapshot": 1.6647,
+      "status": "sent",
+      "signature": "4jbFZUZC8bXG23tyn9i41Eog3xAfLKGBfxcJB6auFFs4xHJPCm34M3sVtcw8yAxwYtdLjCPd7EBjqQhcBTWVFtKv"
+    },
+    {
+      "rank": 15,
+      "pumpFunVisibleRank": null,
+      "address": "H9BjMqt2a6cGgrMquUAKdcXiAbCB5vd7kUusBRVQ5Ykp",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 19:01:08",
+      "holdingSinceUtc": "2026-07-02T23:01:08.000Z",
+      "holderPctAtSnapshot": 1.6491,
+      "status": "sent",
+      "signature": "4jbFZUZC8bXG23tyn9i41Eog3xAfLKGBfxcJB6auFFs4xHJPCm34M3sVtcw8yAxwYtdLjCPd7EBjqQhcBTWVFtKv"
+    },
+    {
+      "rank": 16,
+      "pumpFunVisibleRank": null,
+      "address": "HuqjCg6Z7UD4HDTRSEfLFKsZe43yfcuFqi3Ppygy8CCb",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 19:01:08",
+      "holdingSinceUtc": "2026-07-02T23:01:08.000Z",
+      "holderPctAtSnapshot": 1.605,
+      "status": "sent",
+      "signature": "4k7HaqX3thPW6446YehcGJMjTRyxa3BLppTpJHyayeb2hRaMHYKMFfRJbgyNdnqVaap1raid3mB4Xv5q8cGvcme8"
+    },
+    {
+      "rank": 17,
+      "pumpFunVisibleRank": null,
+      "address": "AfD9kXxGVfEK5j3mrDhsYh3pJTdVoM9zUKp1NPVK4gg5",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 22:17:20",
+      "holdingSinceUtc": "2026-07-03T02:17:20.000Z",
+      "holderPctAtSnapshot": 1.6045,
+      "status": "sent",
+      "signature": "4k7HaqX3thPW6446YehcGJMjTRyxa3BLppTpJHyayeb2hRaMHYKMFfRJbgyNdnqVaap1raid3mB4Xv5q8cGvcme8"
+    },
+    {
+      "rank": 20,
+      "pumpFunVisibleRank": null,
+      "address": "9hysqehj84MkQJGTLmRhb4xW4YkVQ4zgvpQubJu17AU1",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 19:55:15",
+      "holdingSinceUtc": "2026-07-02T23:55:15.000Z",
+      "holderPctAtSnapshot": 1.2996,
+      "status": "sent",
+      "signature": "4k7HaqX3thPW6446YehcGJMjTRyxa3BLppTpJHyayeb2hRaMHYKMFfRJbgyNdnqVaap1raid3mB4Xv5q8cGvcme8"
+    },
+    {
+      "rank": 21,
+      "pumpFunVisibleRank": null,
+      "address": "JCpGHokvkiGMFrXVqjBy8YSfYr54Msz4tbvTmkuh3Mrk",
+      "amountPumpr": 250000,
+      "holdingSinceEt": "Jul 2, 2026, 19:03:43",
+      "holdingSinceUtc": "2026-07-02T23:03:43.000Z",
+      "holderPctAtSnapshot": 1.0025,
+      "status": "sent",
+      "signature": "4k7HaqX3thPW6446YehcGJMjTRyxa3BLppTpJHyayeb2hRaMHYKMFfRJbgyNdnqVaap1raid3mB4Xv5q8cGvcme8"
+    }
+  ]
+}
