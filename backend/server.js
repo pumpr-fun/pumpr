@@ -53,6 +53,7 @@ const SUPABASE_AGENTS_OBJECT = String(process.env.SUPABASE_AGENTS_OBJECT || "age
 const SUPABASE_PUMPFUN_PREPARED_OBJECT = String(process.env.SUPABASE_PUMPFUN_PREPARED_OBJECT || "pumpfun/prepared-submissions.json").trim();
 const SUPABASE_PUMPFUN_SESSIONS_OBJECT = String(process.env.SUPABASE_PUMPFUN_SESSIONS_OBJECT || "pumpfun/sessions.json").trim();
 const SUPABASE_PUMPFUN_LAUNCHES_OBJECT = String(process.env.SUPABASE_PUMPFUN_LAUNCHES_OBJECT || "pumpfun/launches.json").trim();
+const SUPABASE_PUMPFUN_METADATA_OBJECT = String(process.env.SUPABASE_PUMPFUN_METADATA_OBJECT || "pumpfun/metadata.json").trim();
 const SUPABASE_SUPPORT_OBJECT = String(process.env.SUPABASE_SUPPORT_OBJECT || "support/messages.json").trim();
 const SUPABASE_PUMPR_CARD_WAITLIST_OBJECT = String(process.env.SUPABASE_PUMPR_CARD_WAITLIST_OBJECT || "pumpr-card/waitlist.json").trim();
 const SUPABASE_REFERRAL_OBJECT = String(process.env.SUPABASE_REFERRAL_OBJECT || "referrals/referrals.json").trim();
@@ -6652,6 +6653,81 @@ function writePumpFunMetadataDb(store) {
   return safe;
 }
 
+function sanitizePumpFunMetadataStore(store = {}) {
+  const safe = {};
+  const rows = store && typeof store === "object" ? store : {};
+  for (const [rawId, row] of Object.entries(rows)) {
+    const id = String(rawId || "").replace(/[^a-f0-9]/gi, "").slice(0, 40);
+    if (!id || !row || typeof row !== "object") continue;
+    safe[id] = {
+      name: String(row.name || "").slice(0, 32),
+      symbol: String(row.symbol || "").slice(0, 13),
+      description: String(row.description || "").slice(0, 4000),
+      image: String(row.image || ""),
+      showName: row.showName !== false,
+      createdAt: Number(row.createdAt || Date.now())
+    };
+  }
+  return safe;
+}
+
+async function readPumpFunMetadataRemote() {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_METADATA_OBJECT) return null;
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_METADATA_OBJECT), {
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      Accept: "application/json"
+    }
+  });
+  if (response.status === 404) return null;
+  if (!response.ok) throw new Error(`Supabase Pump.fun metadata read failed: ${response.status}`);
+  return sanitizePumpFunMetadataStore(await response.json().catch(() => ({})));
+}
+
+async function writePumpFunMetadataRemote(store) {
+  if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_METADATA_OBJECT) return false;
+  await ensureSupabaseStorageBucket();
+  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_METADATA_OBJECT), {
+    method: "POST",
+    headers: {
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      "Content-Type": "application/json; charset=utf-8",
+      "x-upsert": "true"
+    },
+    body: JSON.stringify(sanitizePumpFunMetadataStore(store), null, 2)
+  });
+  if (!response.ok) {
+    const text = await response.text().catch(() => "");
+    throw new Error(`Supabase Pump.fun metadata write failed: ${response.status} ${text}`.trim());
+  }
+  return true;
+}
+
+async function readPumpFunMetadataPersistent(options = {}) {
+  let store = sanitizePumpFunMetadataStore(readPumpFunMetadataDb());
+  if (isSupabaseStorageConfigured() && (options.refresh || !Object.keys(store).length)) {
+    try {
+      const remote = await readPumpFunMetadataRemote();
+      if (remote) {
+        store = remote;
+        writePumpFunMetadataDb(store);
+      }
+    } catch (error) {
+      console.warn(`Supabase Pump.fun metadata read failed: ${error?.message || "connection error"}`);
+    }
+  }
+  return store;
+}
+
+async function writePumpFunMetadataPersistent(store) {
+  const safe = sanitizePumpFunMetadataStore(store);
+  writePumpFunMetadataDb(safe);
+  if (isSupabaseStorageConfigured()) await writePumpFunMetadataRemote(safe);
+  return safe;
+}
+
 async function createPumpFunMetadataUri(req, metadata) {
   const clean = {
     name: String(metadata?.name || "").slice(0, 32),
@@ -6665,8 +6741,8 @@ async function createPumpFunMetadataUri(req, metadata) {
   if (isSupabaseStorageConfigured()) {
     try {
       return await uploadBinaryToSupabaseStorage(binary, "json", "pumpfun");
-    } catch {
-      if (STRICT_UPLOAD_STORE) throw new Error("Pump.fun metadata storage failed");
+    } catch (error) {
+      console.warn(`Supabase Pump.fun metadata object upload failed: ${error?.message || "connection error"}`);
     }
   }
 
@@ -6679,19 +6755,29 @@ async function createPumpFunMetadataUri(req, metadata) {
     return `${base}/uploads/${filename}`;
   }
 
-  const store = readPumpFunMetadataDb();
+  const store = await readPumpFunMetadataPersistent();
   store[id] = { ...clean, createdAt: Date.now() };
-  writePumpFunMetadataDb(store);
+  try {
+    await writePumpFunMetadataPersistent(store);
+  } catch (error) {
+    console.warn(`Supabase Pump.fun metadata fallback write failed: ${error?.message || "connection error"}`);
+    if (STRICT_UPLOAD_STORE && !IS_VERCEL_RUNTIME) throw new Error("Pump.fun metadata storage failed");
+    writePumpFunMetadataDb(store);
+  }
   const base = getPublicBaseUrl(req);
   return `${base}/api/pumpfun/metadata/${id}`;
 }
 
-app.get("/api/pumpfun/metadata/:id", (req, res) => {
-  const id = String(req.params.id || "").replace(/[^a-f0-9]/gi, "");
-  const store = readPumpFunMetadataDb();
-  const row = id ? store[id] : null;
-  if (!row) return res.status(404).json({ error: "Metadata not found" });
-  res.json(row);
+app.get("/api/pumpfun/metadata/:id", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").replace(/[^a-f0-9]/gi, "");
+    const store = await readPumpFunMetadataPersistent({ refresh: true });
+    const row = id ? store[id] : null;
+    if (!row) return res.status(404).json({ error: "Metadata not found" });
+    res.json(row);
+  } catch (error) {
+    res.status(500).json({ error: error.message || "Metadata unavailable" });
+  }
 });
 
 app.get("/api/pumpfun/coin/:mint", async (req, res) => {
