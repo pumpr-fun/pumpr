@@ -1727,6 +1727,22 @@ function normalizeSolanaSignature(result) {
   return "";
 }
 
+function deserializeSolanaTransaction(solanaWeb3, transactionBase64, isVersioned = false) {
+  const bytes = base64ToBytes(transactionBase64);
+  if (isVersioned && solanaWeb3.VersionedTransaction) {
+    return solanaWeb3.VersionedTransaction.deserialize(bytes);
+  }
+  return solanaWeb3.Transaction.from(bytes);
+}
+
+function serializeSignedSolanaTransaction(transaction) {
+  try {
+    return bytesToBase64(transaction.serialize({ requireAllSignatures: false, verifySignatures: false }));
+  } catch {
+    return bytesToBase64(transaction.serialize());
+  }
+}
+
 async function launchPumpFun(details) {
   const { provider, publicKey } = await connectSolanaWallet();
   await ensurePumpRHolderAccess({
@@ -1767,7 +1783,7 @@ async function launchPumpFun(details) {
         creatorWallet: details.pumpfunCreatorWallet || publicKey,
         userPublicKey: publicKey,
         source: "Pump-r",
-        walletBroadcast: typeof provider.signAndSendTransaction === "function",
+        walletBroadcast: false,
         kolApplication: details.kolApplication || null
       });
       mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
@@ -1782,7 +1798,7 @@ async function launchPumpFun(details) {
         : "";
       const useWalletBroadcast = Boolean(payload?.walletBroadcast) && typeof provider.signAndSendTransaction === "function";
       setAlert(ui.alert, `Open Phantom to ${useWalletBroadcast ? "sign and send" : "sign"}${attempt > 0 ? " again" : ""}.${suffixText} ${useWalletBroadcast ? "Phantom will broadcast the Pump.fun create transaction directly." : "Pump-r will verify and broadcast the create transaction through the configured Solana RPC."}`);
-      const transaction = solanaWeb3.Transaction.from(base64ToBytes(transactionBase64));
+      const transaction = deserializeSolanaTransaction(solanaWeb3, transactionBase64, Boolean(payload?.versionedTransaction));
       const signedOrSent = useWalletBroadcast
         ? await provider.signAndSendTransaction(transaction)
         : await provider.signTransaction(transaction);
@@ -1793,9 +1809,10 @@ async function launchPumpFun(details) {
         const finalized = await api.pumpfunFinalize({
           signingToken,
           signature: walletSignature,
+          versionedTransaction: Boolean(payload?.versionedTransaction),
           signedTransactionBase64: useWalletBroadcast
             ? ""
-            : bytesToBase64(signedOrSent.serialize({ requireAllSignatures: false, verifySignatures: false }))
+            : serializeSignedSolanaTransaction(signedOrSent)
         });
         signature = String(finalized?.signature || "");
         finalizedLaunch = finalized?.launch || null;

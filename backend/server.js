@@ -81,7 +81,10 @@ async function loadSolanaWeb3() {
     Connection: mod.Connection,
     Keypair: mod.Keypair,
     PublicKey: mod.PublicKey,
-    Transaction: mod.Transaction
+    Transaction: mod.Transaction,
+    TransactionMessage: mod.TransactionMessage,
+    VersionedTransaction: mod.VersionedTransaction,
+    ComputeBudgetProgram: mod.ComputeBudgetProgram
   };
 }
 
@@ -6594,7 +6597,13 @@ function decryptPumpFunSigningPayload(token = "") {
 }
 
 async function simulateSolanaTransaction(connection, tx, label = "Solana transaction") {
-  const wireTransaction = tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+  const wireTransaction = (() => {
+    try {
+      return tx.serialize({ requireAllSignatures: false, verifySignatures: false });
+    } catch {
+      return tx.serialize();
+    }
+  })();
   const encodedTransaction = Buffer.from(wireTransaction).toString("base64");
   const raw = await connection._rpcRequest("simulateTransaction", [
     encodedTransaction,
@@ -7250,7 +7259,9 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       Connection: SolanaConnection,
       Keypair: SolanaKeypair,
       PublicKey: SolanaPublicKey,
-      Transaction: SolanaTransaction
+      TransactionMessage: SolanaTransactionMessage,
+      VersionedTransaction: SolanaVersionedTransaction,
+      ComputeBudgetProgram: SolanaComputeBudgetProgram
     } = await loadSolanaWeb3();
     const PUMP_MOD = await loadPumpFunSdkModule();
     const PUMP_SDK = PUMP_MOD.PUMP_SDK || PUMP_MOD.default?.PUMP_SDK || PUMP_MOD.default;
@@ -7311,19 +7322,60 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       blockhash: String(req.body?.blockhash || "").trim(),
       lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
     };
-    const walletBroadcast = req.body?.walletBroadcast !== false;
+    const walletBroadcast = false;
     const rpcState = await withPumpFunSolanaRpc(
       SolanaConnection,
       "Pump.fun launch prep",
       async (connection, rpcUrl) => {
         const latest = requestedLatest.blockhash ? requestedLatest : await connection.getLatestBlockhash("confirmed");
-        return { connection, rpcUrl, latest };
+        let globalInfo = null;
+        let feeConfigInfo = null;
+        if (devBuyLamports > 0n) {
+          [globalInfo, feeConfigInfo] = await Promise.all([
+            connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA, "confirmed"),
+            PUMP_MOD.PUMP_FEE_CONFIG_PDA ? connection.getAccountInfo(PUMP_MOD.PUMP_FEE_CONFIG_PDA, "confirmed") : Promise.resolve(null)
+          ]);
+          if (!globalInfo) {
+            throw new Error("Pump.fun global pricing account is unavailable from this Solana RPC.");
+          }
+        }
+        return { connection, rpcUrl, latest, globalInfo, feeConfigInfo };
       },
-      { retryAll: false }
+      { retryAll: devBuyLamports > 0n }
     );
     const { connection, rpcUrl, latest } = rpcState;
-    const instructions = [
-      await PUMP_SDK.createV2Instruction({
+    let instructions = [];
+    if (devBuyLamports > 0n && PUMP_SDK?.createV2AndBuyV2Instructions && PUMP_MOD?.getBuyTokenAmountFromSolAmount) {
+      const BN = require("bn.js");
+      const splToken = require("@solana/spl-token");
+      const global = PUMP_SDK.decodeGlobal(rpcState.globalInfo);
+      const feeConfig = rpcState.feeConfigInfo && PUMP_SDK.decodeFeeConfig ? PUMP_SDK.decodeFeeConfig(rpcState.feeConfigInfo) : null;
+      const quoteAmount = new BN(devBuyLamports.toString());
+      const amount = PUMP_MOD.getBuyTokenAmountFromSolAmount({
+        global,
+        feeConfig,
+        mintSupply: null,
+        bondingCurve: null,
+        amount: quoteAmount
+      });
+      instructions = await PUMP_SDK.createV2AndBuyV2Instructions({
+        global,
+        mint: mintKeypair.publicKey,
+        name,
+        symbol,
+        uri: metadataUri,
+        creator,
+        user,
+        amount,
+        quoteAmount,
+        mayhemMode: false,
+        cashback: false,
+        quoteMint: splToken.NATIVE_MINT,
+        quoteTokenProgram: splToken.TOKEN_PROGRAM_ID
+      });
+    }
+    if (!instructions.length) {
+      instructions = [await PUMP_SDK.createV2Instruction({
         mint: mintKeypair.publicKey,
         name,
         symbol,
@@ -7332,12 +7384,24 @@ app.post("/api/pumpfun/launch", async (req, res) => {
         user,
         mayhemMode: false,
         cashback: false
-      })
-    ];
-    const tx = new SolanaTransaction({
-      feePayer: user,
-      recentBlockhash: latest.blockhash
-    }).add(...instructions);
+      })];
+    }
+    const computeUnits = devBuyLamports > 0n ? 600_000 : 270_000;
+    const pumpFunLookupTable = await connection
+      .getAddressLookupTable(new SolanaPublicKey("Hyif6eWb8x88RVrvjPfabsgRYnwkVnyByEXTVTXbUcyP"))
+      .then((row) => row?.value ? [row.value] : [])
+      .catch(() => []);
+    const tx = new SolanaVersionedTransaction(
+      new SolanaTransactionMessage({
+        payerKey: user,
+        recentBlockhash: latest.blockhash,
+        instructions: [
+          SolanaComputeBudgetProgram.setComputeUnitLimit({ units: computeUnits }),
+          SolanaComputeBudgetProgram.setComputeUnitPrice({ microLamports: 10_000 }),
+          ...instructions
+        ]
+      }).compileToV0Message(pumpFunLookupTable)
+    );
     let presignSimulationWarning = "";
     try {
       await simulateSolanaTransaction(connection, tx, "Pump.fun create");
@@ -7345,9 +7409,6 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       // Phantom and finalization still perform the signed path; unsigned Pump.fun
       // create simulation can fail before the browser wallet signature exists.
       presignSimulationWarning = error.message || "Unsigned Pump.fun create simulation skipped";
-    }
-    if (walletBroadcast) {
-      tx.partialSign(mintKeypair);
     }
     const mint = mintKeypair.publicKey.toBase58();
     const signingToken = encryptPumpFunSigningPayload({
@@ -7367,6 +7428,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       rpcUrl,
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight,
+      transactionVersion: "v0",
       expiresAt: Date.now() + 5 * 60 * 1000
     });
     res.json({
@@ -7379,7 +7441,8 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       mintSuffix: vanityMint.suffix,
       mintSuffixAttempts: vanityMint.attempts,
       mintSuffixDurationMs: vanityMint.durationMs,
-      transactionBase64: tx.serialize({ requireAllSignatures: false, verifySignatures: false }).toString("base64"),
+      transactionBase64: Buffer.from(tx.serialize()).toString("base64"),
+      versionedTransaction: true,
       signingToken,
       kolApplication,
       holderEligibility,
@@ -7401,7 +7464,8 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
       Connection: SolanaConnection,
       Keypair: SolanaKeypair,
       PublicKey: SolanaPublicKey,
-      Transaction: SolanaTransaction
+      Transaction: SolanaTransaction,
+      VersionedTransaction: SolanaVersionedTransaction
     } = await loadSolanaWeb3();
     const signedTransactionBase64 = String(req.body?.signedTransactionBase64 || req.body?.transactionBase64 || "").trim();
     const signingToken = String(req.body?.signingToken || "").trim();
@@ -7439,12 +7503,24 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
           SolanaConnection,
           "Pump.fun signed create broadcast",
           async (connection, rpcUrl) => {
-            const tx = SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
-            const userSignature = tx.signatures.find((row) => row.publicKey?.equals?.(user));
-            if (!userSignature?.signature) {
-              throw new Error("Phantom did not sign the Pump.fun transaction. Reconnect wallet and try again.");
+            const isVersioned = String(pending.transactionVersion || "") === "v0" || req.body?.versionedTransaction;
+            const tx = isVersioned
+              ? SolanaVersionedTransaction.deserialize(Buffer.from(signedTransactionBase64, "base64"))
+              : SolanaTransaction.from(Buffer.from(signedTransactionBase64, "base64"));
+            if (isVersioned) {
+              const userIndex = tx.message.staticAccountKeys.findIndex((key) => key?.equals?.(user));
+              const userSignature = userIndex >= 0 ? tx.signatures[userIndex] : null;
+              if (!userSignature || !Buffer.from(userSignature).some(Boolean)) {
+                throw new Error("Phantom did not sign the Pump.fun transaction. Reconnect wallet and try again.");
+              }
+              tx.sign([mintKeypair]);
+            } else {
+              const userSignature = tx.signatures.find((row) => row.publicKey?.equals?.(user));
+              if (!userSignature?.signature) {
+                throw new Error("Phantom did not sign the Pump.fun transaction. Reconnect wallet and try again.");
+              }
+              tx.partialSign(mintKeypair);
             }
-            tx.partialSign(mintKeypair);
             await simulateSolanaTransaction(connection, tx, "Signed Pump.fun create");
             const signature = await connection.sendRawTransaction(tx.serialize(), { skipPreflight: false });
             await connection.confirmTransaction(
