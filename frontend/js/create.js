@@ -1784,6 +1784,7 @@ async function launchPumpFun(details) {
         userPublicKey: publicKey,
         source: "Pump-r",
         walletBroadcast: false,
+        transactionFormat: "legacy",
         kolApplication: details.kolApplication || null
       });
       mint = String(payload?.mint || payload?.tokenAddress || payload?.token || "");
@@ -1797,7 +1798,7 @@ async function launchPumpFun(details) {
         ? ` Mint ${shortAddress(mint)} ends with ${suffix}.`
         : "";
       const useWalletBroadcast = Boolean(payload?.walletBroadcast) && typeof provider.signAndSendTransaction === "function";
-      setAlert(ui.alert, `Open Phantom to ${useWalletBroadcast ? "sign and send" : "sign"}${attempt > 0 ? " again" : ""}.${suffixText} This is a create-only Pump.fun transaction; any dev buy opens as a separate second prompt after launch.`);
+      setAlert(ui.alert, `Open Phantom to ${useWalletBroadcast ? "sign and send" : "sign"}${attempt > 0 ? " again" : ""}.${suffixText} Pump-r is using the legacy Pump.fun create path; dev buy and Manlet Mode open as separate prompts after launch.`);
       const transaction = deserializeSolanaTransaction(solanaWeb3, transactionBase64, Boolean(payload?.versionedTransaction));
       const signedOrSent = useWalletBroadcast
         ? await provider.signAndSendTransaction(transaction)

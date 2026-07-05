@@ -7259,6 +7259,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       Connection: SolanaConnection,
       Keypair: SolanaKeypair,
       PublicKey: SolanaPublicKey,
+      Transaction: SolanaTransaction,
       TransactionMessage: SolanaTransactionMessage,
       VersionedTransaction: SolanaVersionedTransaction
     } = await loadSolanaWeb3();
@@ -7322,6 +7323,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
     };
     const walletBroadcast = false;
+    const transactionFormat = String(req.body?.transactionFormat || "legacy").trim().toLowerCase() === "v0" ? "v0" : "legacy";
     const rpcState = await withPumpFunSolanaRpc(
       SolanaConnection,
       "Pump.fun launch prep",
@@ -7342,17 +7344,23 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       mayhemMode: false,
       cashback: false
     })];
-    const pumpFunLookupTable = await connection
-      .getAddressLookupTable(new SolanaPublicKey("Hyif6eWb8x88RVrvjPfabsgRYnwkVnyByEXTVTXbUcyP"))
-      .then((row) => row?.value ? [row.value] : [])
-      .catch(() => []);
-    const tx = new SolanaVersionedTransaction(
-      new SolanaTransactionMessage({
-        payerKey: user,
-        recentBlockhash: latest.blockhash,
-        instructions
-      }).compileToV0Message(pumpFunLookupTable)
-    );
+    const tx = transactionFormat === "v0"
+      ? new SolanaVersionedTransaction(
+          new SolanaTransactionMessage({
+            payerKey: user,
+            recentBlockhash: latest.blockhash,
+            instructions
+          }).compileToV0Message(
+            await connection
+              .getAddressLookupTable(new SolanaPublicKey("Hyif6eWb8x88RVrvjPfabsgRYnwkVnyByEXTVTXbUcyP"))
+              .then((row) => row?.value ? [row.value] : [])
+              .catch(() => [])
+          )
+        )
+      : new SolanaTransaction({
+          feePayer: user,
+          recentBlockhash: latest.blockhash
+        }).add(...instructions);
     let presignSimulationWarning = "";
     try {
       await simulateSolanaTransaction(connection, tx, "Pump.fun create");
@@ -7379,12 +7387,20 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       rpcUrl,
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight,
-      transactionVersion: "v0",
+      transactionVersion: transactionFormat,
       expiresAt: Date.now() + 5 * 60 * 1000
     });
+    const transactionBase64 = (() => {
+      try {
+        return Buffer.from(tx.serialize({ requireAllSignatures: false, verifySignatures: false })).toString("base64");
+      } catch {
+        return Buffer.from(tx.serialize()).toString("base64");
+      }
+    })();
     res.json({
       ok: true,
       mode: "sdk",
+      transactionFormat,
       mint,
       tokenAddress: mint,
       pumpfunUrl: pickPumpFunUrl({}, mint),
@@ -7392,8 +7408,8 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       mintSuffix: vanityMint.suffix,
       mintSuffixAttempts: vanityMint.attempts,
       mintSuffixDurationMs: vanityMint.durationMs,
-      transactionBase64: Buffer.from(tx.serialize()).toString("base64"),
-      versionedTransaction: true,
+      transactionBase64,
+      versionedTransaction: transactionFormat === "v0",
       mintPresigned: false,
       signingToken,
       kolApplication,
