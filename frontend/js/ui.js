@@ -31,12 +31,1105 @@ let copyToastEl = null;
 let copyToastTimer = null;
 const REFERRAL_PENDING_KEY = "pumpr.referral.pending.v1";
 const REFERRAL_CONNECT_SESSION_KEY = "pumpr.referral.connect.sent.v1";
+const LANGUAGE_STORAGE_KEY = "pumpr.language.v1";
+const LANGUAGE_OPTIONS = [
+  { code: "en", label: "English", short: "EN" },
+  { code: "es", label: "Español", short: "ES" },
+  { code: "zh", label: "中文", short: "ZH" },
+  { code: "ko", label: "한국어", short: "KO" },
+  { code: "ja", label: "日本語", short: "JA" },
+  { code: "hi", label: "हिन्दी", short: "HI" },
+  { code: "tr", label: "Türkçe", short: "TR" },
+  { code: "ar", label: "العربية", short: "AR" },
+  { code: "pt", label: "Português", short: "PT" },
+  { code: "fr", label: "Français", short: "FR" }
+];
+const UI_TRANSLATIONS = {
+  en: {
+    Home: "Home",
+    Onboard: "Onboard",
+    GO: "GO",
+    Alpha: "Alpha",
+    "Alpha Tips": "Alpha Tips",
+    Agents: "Agents",
+    Airdrop: "Airdrop",
+    Referrals: "Referrals",
+    "PUMPR Card": "PUMPR Card",
+    Profile: "Profile",
+    Communities: "Communities",
+    Support: "Support",
+    Terminal: "Terminal",
+    Create: "Create",
+    "+ Create": "+ Create",
+    "Join waitlist": "Join waitlist",
+    "Sign in": "Sign in",
+    "Sign in with Phantom": "Sign in with Phantom",
+    "Log out": "Log out",
+    "View profile": "View profile",
+    Balance: "Balance",
+    Browse: "Browse",
+    "Export key": "Export key"
+  },
+  es: {
+    Home: "Inicio",
+    Onboard: "Guía",
+    GO: "GO",
+    Alpha: "Alpha",
+    "Alpha Tips": "Tips Alpha",
+    Agents: "Agentes",
+    Airdrop: "Airdrop",
+    Referrals: "Referidos",
+    "PUMPR Card": "Tarjeta PUMPR",
+    Profile: "Perfil",
+    Communities: "Comunidades",
+    Support: "Soporte",
+    Terminal: "Terminal",
+    Create: "Crear",
+    "+ Create": "+ Crear",
+    "Join waitlist": "Unirse",
+    "Sign in": "Entrar",
+    "Sign in with Phantom": "Entrar con Phantom",
+    "Log out": "Salir",
+    "View profile": "Ver perfil",
+    Balance: "Balance",
+    Browse: "Explorar",
+    "Export key": "Exportar clave"
+  },
+  zh: {
+    Home: "首页",
+    Onboard: "入门",
+    GO: "GO",
+    Alpha: "Alpha",
+    "Alpha Tips": "Alpha 提示",
+    Agents: "代理",
+    Airdrop: "空投",
+    Referrals: "推荐",
+    "PUMPR Card": "PUMPR 卡",
+    Profile: "个人资料",
+    Communities: "社区",
+    Support: "支持",
+    Terminal: "终端",
+    Create: "创建",
+    "+ Create": "+ 创建",
+    "Join waitlist": "加入候补",
+    "Sign in": "登录",
+    "Sign in with Phantom": "用 Phantom 登录",
+    "Log out": "退出",
+    "View profile": "查看资料",
+    Balance: "余额",
+    Browse: "浏览",
+    "Export key": "导出密钥"
+  },
+  ko: {
+    Home: "홈",
+    Onboard: "온보딩",
+    GO: "GO",
+    Alpha: "알파",
+    "Alpha Tips": "알파 팁",
+    Agents: "에이전트",
+    Airdrop: "에어드롭",
+    Referrals: "추천",
+    "PUMPR Card": "PUMPR 카드",
+    Profile: "프로필",
+    Communities: "커뮤니티",
+    Support: "지원",
+    Terminal: "터미널",
+    Create: "생성",
+    "+ Create": "+ 생성",
+    "Join waitlist": "대기 등록",
+    "Sign in": "로그인",
+    "Sign in with Phantom": "Phantom 로그인",
+    "Log out": "로그아웃",
+    "View profile": "프로필 보기",
+    Balance: "잔액",
+    Browse: "둘러보기",
+    "Export key": "키 내보내기"
+  },
+  ja: {
+    Home: "ホーム",
+    Onboard: "オンボード",
+    GO: "GO",
+    Alpha: "アルファ",
+    "Alpha Tips": "アルファ情報",
+    Agents: "エージェント",
+    Airdrop: "エアドロップ",
+    Referrals: "紹介",
+    "PUMPR Card": "PUMPRカード",
+    Profile: "プロフィール",
+    Communities: "コミュニティ",
+    Support: "サポート",
+    Terminal: "ターミナル",
+    Create: "作成",
+    "+ Create": "+ 作成",
+    "Join waitlist": "待機登録",
+    "Sign in": "ログイン",
+    "Sign in with Phantom": "Phantomでログイン",
+    "Log out": "ログアウト",
+    "View profile": "プロフィールを見る",
+    Balance: "残高",
+    Browse: "見る",
+    "Export key": "キーを出力"
+  },
+  hi: {
+    Home: "होम",
+    Onboard: "ऑनबोर्ड",
+    GO: "GO",
+    Alpha: "अल्फा",
+    "Alpha Tips": "अल्फा टिप्स",
+    Agents: "एजेंट",
+    Airdrop: "एयरड्रॉप",
+    Referrals: "रेफरल",
+    "PUMPR Card": "PUMPR कार्ड",
+    Profile: "प्रोफाइल",
+    Communities: "कम्युनिटी",
+    Support: "सपोर्ट",
+    Terminal: "टर्मिनल",
+    Create: "बनाएं",
+    "+ Create": "+ बनाएं",
+    "Join waitlist": "वेटलिस्ट",
+    "Sign in": "साइन इन",
+    "Sign in with Phantom": "Phantom से साइन इन",
+    "Log out": "लॉग आउट",
+    "View profile": "प्रोफाइल देखें",
+    Balance: "बैलेंस",
+    Browse: "ब्राउज़",
+    "Export key": "की एक्सपोर्ट"
+  },
+  tr: {
+    Home: "Ana Sayfa",
+    Onboard: "Başlangıç",
+    GO: "GO",
+    Alpha: "Alpha",
+    "Alpha Tips": "Alpha İpuçları",
+    Agents: "Ajanlar",
+    Airdrop: "Airdrop",
+    Referrals: "Referanslar",
+    "PUMPR Card": "PUMPR Kart",
+    Profile: "Profil",
+    Communities: "Topluluklar",
+    Support: "Destek",
+    Terminal: "Terminal",
+    Create: "Oluştur",
+    "+ Create": "+ Oluştur",
+    "Join waitlist": "Listeye katıl",
+    "Sign in": "Giriş yap",
+    "Sign in with Phantom": "Phantom ile giriş",
+    "Log out": "Çıkış yap",
+    "View profile": "Profili gör",
+    Balance: "Bakiye",
+    Browse: "Gez",
+    "Export key": "Anahtarı dışa aktar"
+  },
+  ar: {
+    Home: "الرئيسية",
+    Onboard: "البدء",
+    GO: "GO",
+    Alpha: "ألفا",
+    "Alpha Tips": "نصائح ألفا",
+    Agents: "الوكلاء",
+    Airdrop: "إيردروب",
+    Referrals: "الإحالات",
+    "PUMPR Card": "بطاقة PUMPR",
+    Profile: "الملف",
+    Communities: "المجتمعات",
+    Support: "الدعم",
+    Terminal: "الطرفية",
+    Create: "إنشاء",
+    "+ Create": "+ إنشاء",
+    "Join waitlist": "قائمة الانتظار",
+    "Sign in": "تسجيل",
+    "Sign in with Phantom": "تسجيل عبر Phantom",
+    "Log out": "خروج",
+    "View profile": "عرض الملف",
+    Balance: "الرصيد",
+    Browse: "تصفح",
+    "Export key": "تصدير المفتاح"
+  },
+  pt: {
+    Home: "Início",
+    Onboard: "Começar",
+    GO: "GO",
+    Alpha: "Alpha",
+    "Alpha Tips": "Dicas Alpha",
+    Agents: "Agentes",
+    Airdrop: "Airdrop",
+    Referrals: "Indicações",
+    "PUMPR Card": "Cartão PUMPR",
+    Profile: "Perfil",
+    Communities: "Comunidades",
+    Support: "Suporte",
+    Terminal: "Terminal",
+    Create: "Criar",
+    "+ Create": "+ Criar",
+    "Join waitlist": "Entrar na lista",
+    "Sign in": "Entrar",
+    "Sign in with Phantom": "Entrar com Phantom",
+    "Log out": "Sair",
+    "View profile": "Ver perfil",
+    Balance: "Saldo",
+    Browse: "Explorar",
+    "Export key": "Exportar chave"
+  },
+  fr: {
+    Home: "Accueil",
+    Onboard: "Démarrer",
+    GO: "GO",
+    Alpha: "Alpha",
+    "Alpha Tips": "Tips Alpha",
+    Agents: "Agents",
+    Airdrop: "Airdrop",
+    Referrals: "Parrainage",
+    "PUMPR Card": "Carte PUMPR",
+    Profile: "Profil",
+    Communities: "Communautés",
+    Support: "Support",
+    Terminal: "Terminal",
+    Create: "Créer",
+    "+ Create": "+ Créer",
+    "Join waitlist": "Liste d'attente",
+    "Sign in": "Connexion",
+    "Sign in with Phantom": "Connexion Phantom",
+    "Log out": "Déconnexion",
+    "View profile": "Voir profil",
+    Balance: "Solde",
+    Browse: "Explorer",
+    "Export key": "Exporter clé"
+  }
+};
+const EXTRA_TRANSLATIONS = {
+  en: {
+    "Select language": "Select language",
+    "Language set to": "Language set to",
+    "Pump Fun Remastered is better": "Pump Fun Remastered is better",
+    "Official Pump Fun Token Coming Soon": "Official Pump Fun Token Coming Soon",
+    "mobile app coming soon": "mobile app coming soon",
+    "Trade faster. Track creator stats and holdings.": "Trade faster. Track creator stats and holdings.",
+    "Search by coin, symbol, address...": "Search by coin, symbol, address...",
+    "Search wallet address (0x or SOL...)": "Search wallet address (0x or SOL...)",
+    "Search agents, skills, targets...": "Search agents, skills, targets...",
+    "Search GO bounties, submissions, agents...": "Search GO bounties, submissions, agents...",
+    "Top communities": "Top communities",
+    "Trending now": "Trending now",
+    "Explore coins": "Explore coins",
+    "Movers": "Movers",
+    "New": "New",
+    "Market cap": "Market cap",
+    "Oldest": "Oldest",
+    "Last trade": "Last trade",
+    "Watchlist": "Watchlist",
+    "Created coins": "Created coins",
+    Portfolio: "Portfolio",
+    Balances: "Balances",
+    Coins: "Coins",
+    "Creator Rewards": "Creator Rewards",
+    Notifications: "Notifications",
+    Followers: "Followers",
+    Following: "Following",
+    "No created coins yet.": "No created coins yet.",
+    "No balances found for this profile.": "No balances found for this profile.",
+    "Load a profile to see details.": "Load a profile to see details.",
+    "Launch coin": "Launch coin",
+    "Token economics and advanced fields": "Token economics and advanced fields",
+    "Total supply": "Total supply",
+    "Creator allocation (%)": "Creator allocation (%)",
+    "Optional starter buy (ETH)": "Optional starter buy (ETH)",
+    "Image URL (optional override)": "Image URL (optional override)",
+    "Token trade tax (%)": "Token trade tax (%)",
+    "Pump.fun creator wallet (optional)": "Pump.fun creator wallet (optional)",
+    "Manlet Mode": "Manlet Mode",
+    "Send tokens after launch": "Send tokens after launch",
+    "Wallet list": "Wallet list",
+    "SOL buy amount": "SOL buy amount",
+    "Estimated tokens": "Estimated tokens",
+    "Estimated supply": "Estimated supply",
+    "Token send is off.": "Token send is off.",
+    "Official holder airdrop": "Official holder airdrop",
+    "Official token": "Official token",
+    "Reward target": "Reward target",
+    "Preview split": "Preview split",
+    "How payout works": "How payout works",
+    "Reward source": "Reward source",
+    "Official token only": "Official token only",
+    "Completed drop": "Completed drop",
+    "Total allocated": "Total allocated",
+    "Eligible holders": "Eligible holders",
+    "Per holder": "Per holder",
+    Holder: "Holder",
+    Received: "Received",
+    Share: "Share",
+    "Holding since": "Holding since",
+    Proof: "Proof",
+    Solana: "Solana",
+    beta: "beta",
+    waitlist: "waitlist",
+    "Referral beta": "Referral beta",
+    "Referral rewards": "Referral rewards",
+    "Referral name": "Referral name",
+    "Your referral beta": "Your referral beta",
+    "Link and QR": "Link and QR",
+    "Copy link": "Copy link",
+    "Download QR": "Download QR",
+    "How it works": "How it works",
+    Tier: "Tier",
+    "Connected wallet": "Connected wallet",
+    "Connect wallet to generate link": "Connect wallet to generate link",
+    Refresh: "Refresh",
+    Save: "Save",
+    "PUMPR Card waitlist": "PUMPR Card waitlist",
+    "Coming soon": "Coming soon",
+    "Get early access": "Get early access",
+    "Enter your email": "Enter your email",
+    "Alpha vault": "Alpha vault",
+    "Submit alpha": "Submit alpha",
+    "Share an alpha tip": "Share an alpha tip",
+    "Full alpha": "Full alpha",
+    "Evidence file": "Evidence file",
+    "Choose evidence": "Choose evidence",
+    "No evidence selected": "No evidence selected",
+    Category: "Category",
+    Confidence: "Confidence",
+    "Tip wallet": "Tip wallet",
+    "Publish alpha": "Publish alpha",
+    Cancel: "Cancel",
+    High: "High",
+    "I'm a Human": "I'm a Human",
+    "I'm an Agent": "I'm an Agent",
+    "Join Pump-r": "Join Pump-r",
+    "Preview skill.md": "Preview skill.md",
+    "Register an agent": "Register an agent",
+    Name: "Name",
+    Summary: "Summary",
+    Goals: "Goals",
+    "Import SKILLS.md": "Import SKILLS.md",
+    "Run agent": "Run agent",
+    "No wallet needed": "No wallet needed",
+    "Meme coin training arena.": "Meme coin training arena.",
+    Learn: "Learn",
+    Play: "Play",
+    Compete: "Compete",
+    Belong: "Belong",
+    Level: "Level",
+    "Fake portfolio": "Fake portfolio",
+    "Next quest": "Next quest",
+    Badges: "Badges",
+    "Open on phone": "Open on phone",
+    Connect: "Connect",
+    Disconnect: "Disconnect",
+    Deposit: "Deposit",
+    Trade: "Trade",
+    "Buy crypto": "Buy crypto",
+    History: "History",
+    "Copy address": "Copy address",
+    "Crypto transfer": "Crypto transfer",
+    "Card / bank": "Card / bank",
+    "All activity": "All activity",
+    Available: "Available",
+    "YOUR BALANCE": "YOUR BALANCE",
+    "Export private key": "Export private key",
+    "Copy private key": "Copy private key",
+    "Generated wallet": "Generated wallet",
+    "Wallet activity": "Wallet activity",
+    "Pump-r tokens": "Pump-r tokens",
+    Done: "Done",
+    "Edit profile": "Edit profile",
+    Username: "Username",
+    Bio: "Bio",
+    "Describe your profile": "Describe your profile",
+    "Choose username": "Choose username",
+    Remove: "Remove",
+    Copy: "Copy",
+    Copied: "Copied",
+    Close: "Close",
+    Submit: "Submit",
+    Confirm: "Confirm",
+    "Open token": "Open token",
+    "Not connected": "Not connected",
+    Guest: "Guest"
+  },
+  es: {
+    "Select language": "Seleccionar idioma",
+    "Language set to": "Idioma cambiado a",
+    "Pump Fun Remastered is better": "Pump Fun Remastered es mejor",
+    "Official Pump Fun Token Coming Soon": "Token oficial de Pump Fun próximamente",
+    "mobile app coming soon": "app móvil próximamente",
+    "Trade faster. Track creator stats and holdings.": "Opera más rápido. Sigue estadísticas de creadores y holdings.",
+    "Search by coin, symbol, address...": "Buscar por moneda, símbolo o dirección...",
+    "Search wallet address (0x or SOL...)": "Buscar wallet (0x o SOL...)",
+    "Search agents, skills, targets...": "Buscar agentes, skills, objetivos...",
+    "Search GO bounties, submissions, agents...": "Buscar bounties GO, envíos, agentes...",
+    "Top communities": "Comunidades top",
+    "Trending now": "Tendencia ahora",
+    "Explore coins": "Explorar monedas",
+    Movers: "Movers",
+    New: "Nuevo",
+    "Market cap": "Capitalización",
+    Oldest: "Más antiguo",
+    "Last trade": "Último trade",
+    Watchlist: "Watchlist",
+    "Created coins": "Monedas creadas",
+    Portfolio: "Portafolio",
+    Balances: "Balances",
+    Coins: "Monedas",
+    "Creator Rewards": "Recompensas de creadores",
+    Notifications: "Notificaciones",
+    Followers: "Seguidores",
+    Following: "Siguiendo",
+    "No created coins yet.": "Aún no hay monedas creadas.",
+    "No balances found for this profile.": "No se encontraron balances para este perfil.",
+    "Load a profile to see details.": "Carga un perfil para ver detalles.",
+    "Launch coin": "Lanzar moneda",
+    "Token economics and advanced fields": "Economía del token y campos avanzados",
+    "Total supply": "Supply total",
+    "Creator allocation (%)": "Asignación del creador (%)",
+    "Optional starter buy (ETH)": "Compra inicial opcional (ETH)",
+    "Image URL (optional override)": "URL de imagen (opcional)",
+    "Token trade tax (%)": "Impuesto de trade (%)",
+    "Pump.fun creator wallet (optional)": "Wallet creadora Pump.fun (opcional)",
+    "Manlet Mode": "Modo Manlet",
+    "Send tokens after launch": "Enviar tokens tras lanzar",
+    "Wallet list": "Lista de wallets",
+    "SOL buy amount": "Cantidad de compra SOL",
+    "Estimated tokens": "Tokens estimados",
+    "Estimated supply": "Supply estimado",
+    "Token send is off.": "Envío de tokens apagado.",
+    "Official holder airdrop": "Airdrop oficial para holders",
+    "Official token": "Token oficial",
+    "Reward target": "Objetivo de recompensa",
+    "Preview split": "Previsualizar reparto",
+    "How payout works": "Cómo funciona el pago",
+    "Reward source": "Fuente de recompensa",
+    "Official token only": "Solo token oficial",
+    "Completed drop": "Drop completado",
+    "Total allocated": "Total asignado",
+    "Eligible holders": "Holders elegibles",
+    "Per holder": "Por holder",
+    Holder: "Holder",
+    Received: "Recibido",
+    Share: "Participación",
+    "Holding since": "Holding desde",
+    Proof: "Prueba",
+    Solana: "Solana",
+    beta: "beta",
+    waitlist: "lista",
+    "Referral beta": "Beta de referidos",
+    "Referral rewards": "Recompensas por referidos",
+    "Referral name": "Nombre de referido",
+    "Your referral beta": "Tu beta de referidos",
+    "Link and QR": "Link y QR",
+    "Copy link": "Copiar link",
+    "Download QR": "Descargar QR",
+    "How it works": "Cómo funciona",
+    Tier: "Nivel",
+    "Connected wallet": "Wallet conectada",
+    "Connect wallet to generate link": "Conecta wallet para generar link",
+    Refresh: "Actualizar",
+    Save: "Guardar",
+    "PUMPR Card waitlist": "Lista PUMPR Card",
+    "Coming soon": "Próximamente",
+    "Get early access": "Acceso anticipado",
+    "Enter your email": "Ingresa tu email",
+    "Alpha vault": "Bóveda alpha",
+    "Submit alpha": "Enviar alpha",
+    "Share an alpha tip": "Compartir tip alpha",
+    "Full alpha": "Alpha completa",
+    "Evidence file": "Archivo de evidencia",
+    "Choose evidence": "Elegir evidencia",
+    "No evidence selected": "Sin evidencia",
+    Category: "Categoría",
+    Confidence: "Confianza",
+    "Tip wallet": "Wallet de tip",
+    "Publish alpha": "Publicar alpha",
+    Cancel: "Cancelar",
+    High: "Alta",
+    "I'm a Human": "Soy humano",
+    "I'm an Agent": "Soy agente",
+    "Join Pump-r": "Únete a Pump-r",
+    "Preview skill.md": "Vista skill.md",
+    "Register an agent": "Registrar agente",
+    Name: "Nombre",
+    Summary: "Resumen",
+    Goals: "Objetivos",
+    "Import SKILLS.md": "Importar SKILLS.md",
+    "Run agent": "Ejecutar agente",
+    "No wallet needed": "Sin wallet necesaria",
+    "Meme coin training arena.": "Arena de entrenamiento meme coin.",
+    Learn: "Aprender",
+    Play: "Jugar",
+    Compete: "Competir",
+    Belong: "Pertenecer",
+    Level: "Nivel",
+    "Fake portfolio": "Portafolio demo",
+    "Next quest": "Próxima misión",
+    Badges: "Insignias",
+    "Open on phone": "Abrir en móvil",
+    Connect: "Conectar",
+    Disconnect: "Desconectar",
+    Deposit: "Depositar",
+    Trade: "Trade",
+    "Buy crypto": "Comprar crypto",
+    History: "Historial",
+    "Copy address": "Copiar dirección",
+    "Crypto transfer": "Transferencia crypto",
+    "Card / bank": "Tarjeta / banco",
+    "All activity": "Toda actividad",
+    Available: "Disponible",
+    "YOUR BALANCE": "TU BALANCE",
+    "Export private key": "Exportar clave privada",
+    "Copy private key": "Copiar clave privada",
+    "Generated wallet": "Wallet generada",
+    "Wallet activity": "Actividad de wallet",
+    "Pump-r tokens": "Tokens Pump-r",
+    Done: "Listo",
+    "Edit profile": "Editar perfil",
+    Username: "Usuario",
+    Bio: "Bio",
+    "Describe your profile": "Describe tu perfil",
+    "Choose username": "Elige usuario",
+    Remove: "Quitar",
+    Copy: "Copiar",
+    Copied: "Copiado",
+    Close: "Cerrar",
+    Submit: "Enviar",
+    Confirm: "Confirmar",
+    "Open token": "Abrir token",
+    "Not connected": "No conectado",
+    Guest: "Invitado"
+  },
+  fr: {
+    "Select language": "Choisir la langue",
+    "Language set to": "Langue changée en",
+    "Pump Fun Remastered is better": "Pump Fun Remastered est meilleur",
+    "Official Pump Fun Token Coming Soon": "Token officiel Pump Fun bientôt",
+    "mobile app coming soon": "application mobile bientôt",
+    "Trade faster. Track creator stats and holdings.": "Tradez plus vite. Suivez les stats créateurs et holdings.",
+    "Search by coin, symbol, address...": "Rechercher par coin, symbole, adresse...",
+    "Search wallet address (0x or SOL...)": "Rechercher un wallet (0x ou SOL...)",
+    "Top communities": "Top communautés",
+    "Trending now": "Tendance",
+    "Explore coins": "Explorer les coins",
+    New: "Nouveau",
+    "Market cap": "Capitalisation",
+    Oldest: "Plus ancien",
+    "Last trade": "Dernier trade",
+    "Created coins": "Coins créés",
+    Portfolio: "Portefeuille",
+    Balances: "Soldes",
+    Coins: "Coins",
+    "Creator Rewards": "Récompenses créateurs",
+    Notifications: "Notifications",
+    Followers: "Abonnés",
+    Following: "Abonnements",
+    "Launch coin": "Lancer le coin",
+    "Total supply": "Supply totale",
+    "Creator allocation (%)": "Allocation créateur (%)",
+    "Send tokens after launch": "Envoyer des tokens après lancement",
+    "Wallet list": "Liste wallets",
+    "SOL buy amount": "Montant d'achat SOL",
+    "Official holder airdrop": "Airdrop officiel holders",
+    "Official token": "Token officiel",
+    "Preview split": "Aperçu répartition",
+    "How payout works": "Fonctionnement du paiement",
+    "Completed drop": "Drop terminé",
+    Holder: "Holder",
+    Received: "Reçu",
+    Share: "Part",
+    "Holding since": "Hold depuis",
+    beta: "bêta",
+    waitlist: "liste",
+    "Referral name": "Nom de parrainage",
+    "Link and QR": "Lien et QR",
+    Refresh: "Actualiser",
+    Save: "Enregistrer",
+    "Coming soon": "Bientôt",
+    "Enter your email": "Entrez votre email",
+    "Submit alpha": "Soumettre alpha",
+    "Publish alpha": "Publier alpha",
+    Cancel: "Annuler",
+    High: "Élevée",
+    "I'm a Human": "Je suis humain",
+    "I'm an Agent": "Je suis agent",
+    Name: "Nom",
+    Summary: "Résumé",
+    Goals: "Objectifs",
+    Learn: "Apprendre",
+    Play: "Jouer",
+    Compete: "Concourir",
+    Belong: "Appartenir",
+    Connect: "Connecter",
+    Disconnect: "Déconnecter",
+    Deposit: "Dépôt",
+    Trade: "Trader",
+    "Buy crypto": "Acheter crypto",
+    History: "Historique",
+    "Copy address": "Copier adresse",
+    "Generated wallet": "Wallet généré",
+    "Wallet activity": "Activité wallet",
+    "Pump-r tokens": "Tokens Pump-r",
+    Available: "Disponible",
+    "Edit profile": "Modifier profil",
+    Username: "Nom d'utilisateur",
+    Bio: "Bio",
+    Copy: "Copier",
+    Copied: "Copié",
+    Close: "Fermer",
+    Submit: "Soumettre",
+    "Not connected": "Non connecté",
+    Guest: "Invité"
+  },
+  pt: {
+    "Select language": "Selecionar idioma",
+    "Language set to": "Idioma alterado para",
+    "Pump Fun Remastered is better": "Pump Fun Remastered é melhor",
+    "mobile app coming soon": "app móvel em breve",
+    "Top communities": "Top comunidades",
+    "Trending now": "Em alta agora",
+    "Explore coins": "Explorar moedas",
+    New: "Novo",
+    "Market cap": "Valor de mercado",
+    "Created coins": "Moedas criadas",
+    Portfolio: "Portfólio",
+    Balances: "Saldos",
+    Coins: "Moedas",
+    Followers: "Seguidores",
+    Following: "Seguindo",
+    "Launch coin": "Lançar moeda",
+    "Total supply": "Supply total",
+    "Official holder airdrop": "Airdrop oficial para holders",
+    "Official token": "Token oficial",
+    Holder: "Holder",
+    Received: "Recebido",
+    Share: "Participação",
+    "Holding since": "Segurando desde",
+    beta: "beta",
+    waitlist: "lista",
+    Refresh: "Atualizar",
+    Save: "Salvar",
+    "Coming soon": "Em breve",
+    Cancel: "Cancelar",
+    High: "Alta",
+    Connect: "Conectar",
+    Disconnect: "Desconectar",
+    Deposit: "Depositar",
+    "Buy crypto": "Comprar cripto",
+    "Copy address": "Copiar endereço",
+    "Generated wallet": "Wallet gerada",
+    "Wallet activity": "Atividade da wallet",
+    "Pump-r tokens": "Tokens Pump-r",
+    Available: "Disponível",
+    "Edit profile": "Editar perfil",
+    Username: "Usuário",
+    Bio: "Bio",
+    Copy: "Copiar",
+    Copied: "Copiado",
+    Close: "Fechar",
+    Submit: "Enviar",
+    "Not connected": "Não conectado",
+    Guest: "Convidado"
+  }
+};
+Object.entries(EXTRA_TRANSLATIONS).forEach(([language, entries]) => {
+  UI_TRANSLATIONS[language] = { ...(UI_TRANSLATIONS[language] || {}), ...entries };
+});
+const WORD_TRANSLATIONS = {
+  es: {
+    token: "token",
+    tokens: "tokens",
+    wallet: "wallet",
+    wallets: "wallets",
+    launch: "lanzar",
+    launched: "lanzado",
+    create: "crear",
+    created: "creado",
+    holder: "holder",
+    holders: "holders",
+    reward: "recompensa",
+    rewards: "recompensas",
+    profile: "perfil",
+    connect: "conectar",
+    connected: "conectado",
+    copy: "copiar",
+    copied: "copiado",
+    sign: "firmar",
+    submit: "enviar",
+    publish: "publicar",
+    save: "guardar",
+    cancel: "cancelar",
+    search: "buscar",
+    name: "nombre",
+    summary: "resumen",
+    category: "categoría",
+    confidence: "confianza",
+    evidence: "evidencia",
+    file: "archivo",
+    link: "link",
+    referral: "referido",
+    referrals: "referidos",
+    waitlist: "lista",
+    beta: "beta",
+    coming: "próximamente",
+    soon: "pronto",
+    official: "oficial",
+    community: "comunidad",
+    communities: "comunidades"
+  },
+  fr: {
+    token: "token",
+    tokens: "tokens",
+    wallet: "wallet",
+    wallets: "wallets",
+    launch: "lancer",
+    launched: "lancé",
+    create: "créer",
+    created: "créé",
+    holder: "holder",
+    holders: "holders",
+    reward: "récompense",
+    rewards: "récompenses",
+    profile: "profil",
+    connect: "connecter",
+    connected: "connecté",
+    copy: "copier",
+    copied: "copié",
+    submit: "soumettre",
+    publish: "publier",
+    save: "enregistrer",
+    cancel: "annuler",
+    search: "rechercher",
+    name: "nom",
+    summary: "résumé",
+    category: "catégorie",
+    confidence: "confiance",
+    evidence: "preuve",
+    file: "fichier",
+    link: "lien",
+    referral: "parrainage",
+    referrals: "parrainages",
+    waitlist: "liste",
+    beta: "bêta",
+    coming: "bientôt",
+    soon: "bientôt",
+    official: "officiel",
+    community: "communauté",
+    communities: "communautés"
+  },
+  pt: {
+    token: "token",
+    tokens: "tokens",
+    wallet: "wallet",
+    wallets: "wallets",
+    launch: "lançar",
+    launched: "lançado",
+    create: "criar",
+    created: "criado",
+    holder: "holder",
+    holders: "holders",
+    reward: "recompensa",
+    rewards: "recompensas",
+    profile: "perfil",
+    connect: "conectar",
+    connected: "conectado",
+    copy: "copiar",
+    copied: "copiado",
+    submit: "enviar",
+    publish: "publicar",
+    save: "salvar",
+    cancel: "cancelar",
+    search: "buscar",
+    name: "nome",
+    summary: "resumo",
+    category: "categoria",
+    confidence: "confiança",
+    evidence: "evidência",
+    file: "arquivo",
+    link: "link",
+    referral: "indicação",
+    referrals: "indicações",
+    waitlist: "lista",
+    beta: "beta",
+    coming: "em breve",
+    soon: "breve",
+    official: "oficial",
+    community: "comunidade",
+    communities: "comunidades"
+  },
+  tr: {
+    token: "token",
+    tokens: "tokenlar",
+    wallet: "cüzdan",
+    wallets: "cüzdanlar",
+    launch: "başlat",
+    launched: "başlatıldı",
+    create: "oluştur",
+    created: "oluşturuldu",
+    holder: "holder",
+    holders: "holderlar",
+    reward: "ödül",
+    rewards: "ödüller",
+    profile: "profil",
+    connect: "bağlan",
+    connected: "bağlı",
+    copy: "kopyala",
+    copied: "kopyalandı",
+    submit: "gönder",
+    publish: "yayınla",
+    save: "kaydet",
+    cancel: "iptal",
+    search: "ara",
+    name: "ad",
+    summary: "özet",
+    category: "kategori",
+    confidence: "güven",
+    evidence: "kanıt",
+    file: "dosya",
+    link: "link",
+    referral: "referans",
+    referrals: "referanslar",
+    waitlist: "bekleme listesi",
+    beta: "beta",
+    coming: "yakında",
+    soon: "yakında",
+    official: "resmi",
+    community: "topluluk",
+    communities: "topluluklar"
+  }
+};
+const translationTextSources = new WeakMap();
+let translationObserver = null;
+let translationObserverTimer = null;
+let translatingStaticUi = false;
 const COPY_TOAST_ICON = `
   <svg viewBox="0 0 20 20" aria-hidden="true">
     <circle cx="10" cy="10" r="7.5"></circle>
     <path d="M6.5 10.2l2.2 2.2 4.8-4.8"></path>
   </svg>
 `;
+
+function supportedLanguage(code = "") {
+  const normalized = String(code || "").trim().toLowerCase().split("-")[0];
+  return LANGUAGE_OPTIONS.some((option) => option.code === normalized) ? normalized : "en";
+}
+
+export function getSelectedLanguage() {
+  let saved = "";
+  try {
+    saved = localStorage.getItem(LANGUAGE_STORAGE_KEY) || "";
+  } catch {
+    saved = "";
+  }
+  const detected = saved || globalThis.navigator?.language || "en";
+  return supportedLanguage(detected);
+}
+
+function applyDocumentLanguage(code = getSelectedLanguage()) {
+  const language = supportedLanguage(code);
+  document.documentElement.lang = language;
+  document.documentElement.dir = language === "ar" ? "rtl" : "ltr";
+  document.body?.setAttribute("data-language", language);
+  return language;
+}
+
+function normalizeTranslationSource(value = "") {
+  return String(value || "").replace(/\s+/g, " ").trim();
+}
+
+function protectedText(value = "") {
+  const text = normalizeTranslationSource(value);
+  if (!text) return true;
+  if (text.length > 180) return true;
+  if (/https?:\/\//i.test(text)) return true;
+  if (/^[@#$][A-Za-z0-9_.$-]{2,32}$/.test(text)) return true;
+  if (/^[-+]?\$?\d[\d,.]*\s*[%A-Za-z$]*$/i.test(text)) return true;
+  if (/0x[a-fA-F0-9]{40}/.test(text)) return true;
+  if (/[1-9A-HJ-NP-Za-km-z]{32,44}/.test(text)) return true;
+  if (/[A-Za-z0-9]{45,}/.test(text)) return true;
+  if (/^[A-Z0-9]{2,12}$/.test(text) && !UI_TRANSLATIONS.en[text]) return true;
+  return false;
+}
+
+function shouldSkipTranslationElement(node) {
+  const element = node?.nodeType === 1 ? node : node?.parentElement;
+  if (!element) return true;
+  return Boolean(element.closest([
+    "script",
+    "style",
+    "svg",
+    "canvas",
+    "code",
+    "pre",
+    "textarea",
+    ".language-select-wrap",
+    ".notranslate",
+    "[data-no-translate]",
+    "[data-user-content]",
+    ".copy-toast",
+    ".logo-title",
+    ".logo-name",
+    ".logo-tld",
+    ".profile-avatar",
+    ".profile-name",
+    ".coin-name",
+    ".coin-symbol",
+    ".token-name",
+    ".token-symbol",
+    ".comment-body",
+    ".alpha-body"
+  ].join(",")));
+}
+
+function shouldTranslateTextNode(node) {
+  if (!node || node.nodeType !== Node.TEXT_NODE) return false;
+  if (shouldSkipTranslationElement(node)) return false;
+  return !protectedText(node.nodeValue);
+}
+
+function preserveTextWhitespace(original = "", next = "") {
+  const leading = String(original).match(/^\s*/)?.[0] || "";
+  const trailing = String(original).match(/\s*$/)?.[0] || "";
+  return `${leading}${next}${trailing}`;
+}
+
+function restoreCase(source = "", translated = "") {
+  if (!translated) return translated;
+  if (/^[A-Z][a-z]+$/.test(source)) return `${translated.charAt(0).toUpperCase()}${translated.slice(1)}`;
+  if (/^[A-Z]+$/.test(source) && translated.length <= 5) return translated.toUpperCase();
+  return translated;
+}
+
+function fallbackWordTranslate(source = "", language = "en") {
+  if (language === "en") return source;
+  const words = WORD_TRANSLATIONS[language];
+  if (!words) return source;
+  let changed = false;
+  const next = source.replace(/\b[A-Za-z][A-Za-z'-]*\b/g, (word) => {
+    const key = word.toLowerCase().replace(/'s$/, "");
+    const translated = words[key];
+    if (!translated) return word;
+    changed = true;
+    return restoreCase(word, translated);
+  });
+  return changed ? next : source;
+}
+
+function translatePhrase(source = "", language = getSelectedLanguage()) {
+  const clean = normalizeTranslationSource(source);
+  if (!clean) return source;
+  if (language === "en") return UI_TRANSLATIONS.en[clean] || clean;
+  const dictionary = UI_TRANSLATIONS[language] || {};
+  const english = UI_TRANSLATIONS.en;
+  if (dictionary[clean]) return dictionary[clean];
+  const englishSource = Object.keys(english).find((key) => english[key] === clean || key === clean);
+  if (englishSource && dictionary[englishSource]) return dictionary[englishSource];
+  return fallbackWordTranslate(clean, language);
+}
+
+function translateTextNode(node, language) {
+  const source = translationTextSources.get(node) || normalizeTranslationSource(node.nodeValue);
+  if (!source || protectedText(source)) return;
+  translationTextSources.set(node, source);
+  const next = translatePhrase(source, language);
+  if (normalizeTranslationSource(node.nodeValue) !== next) {
+    node.nodeValue = preserveTextWhitespace(node.nodeValue, next);
+  }
+}
+
+function translateElementAttributes(node, language) {
+  if (!node || shouldSkipTranslationElement(node)) return;
+  ["placeholder", "aria-label", "title"].forEach((attr) => {
+    const current = node.getAttribute(attr);
+    if (protectedText(current)) return;
+    const sourceAttr = `i18n${attr.replace(/(^|-)([a-z])/g, (_, __, letter) => letter.toUpperCase())}Source`;
+    const source = node.dataset[sourceAttr] || normalizeTranslationSource(current);
+    if (!source || protectedText(source)) return;
+    node.dataset[sourceAttr] = source;
+    const next = translatePhrase(source, language);
+    if (current !== next) node.setAttribute(attr, next);
+  });
+
+  if ((node.tagName === "INPUT" || node.tagName === "BUTTON") && node.hasAttribute("value")) {
+    const current = node.value;
+    if (protectedText(current)) return;
+    const source = node.dataset.i18nValueSource || normalizeTranslationSource(current);
+    if (!source || protectedText(source)) return;
+    node.dataset.i18nValueSource = source;
+    const next = translatePhrase(source, language);
+    if (current !== next) node.value = next;
+  }
+}
+
+function startTranslationObserver() {
+  if (translationObserver || !document?.body) return;
+  translationObserver = new MutationObserver(() => {
+    if (translatingStaticUi) return;
+    clearTimeout(translationObserverTimer);
+    translationObserverTimer = setTimeout(() => translateStaticUi(), 240);
+  });
+  translationObserver.observe(document.body, {
+    childList: true,
+    subtree: true
+  });
+}
+
+export function translateStaticUi(code = getSelectedLanguage()) {
+  const language = supportedLanguage(code);
+  if (translatingStaticUi || !document?.body) return;
+  translatingStaticUi = true;
+  applyDocumentLanguage(language);
+  try {
+    const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return shouldTranslateTextNode(node) ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      }
+    });
+    const textNodes = [];
+    while (walker.nextNode()) textNodes.push(walker.currentNode);
+    textNodes.forEach((node) => translateTextNode(node, language));
+
+    document.querySelectorAll("[placeholder], [aria-label], [title], input[value][readonly], button[value]").forEach((node) => {
+      translateElementAttributes(node, language);
+    });
+  } finally {
+    translatingStaticUi = false;
+  }
+}
+
+export function initLanguageSelector(parentEl = document.querySelector(".top-actions")) {
+  if (!parentEl || document.getElementById("languageSelect")) {
+    startTranslationObserver();
+    translateStaticUi(applyDocumentLanguage());
+    return;
+  }
+
+  const wrap = document.createElement("label");
+  wrap.className = "language-select-wrap";
+  wrap.setAttribute("aria-label", "Select language");
+  wrap.innerHTML = `
+    <span class="language-select-icon" aria-hidden="true">A</span>
+    <select id="languageSelect" class="language-select" title="Select language">
+      ${LANGUAGE_OPTIONS.map((option) => `<option value="${option.code}">${option.short}</option>`).join("")}
+    </select>
+  `;
+
+  const signIn = parentEl.querySelector("#signInBtn");
+  const walletHub = parentEl.querySelector(".wallet-hub-wrap");
+  const profile = parentEl.querySelector("#profileMenuBtn");
+  parentEl.insertBefore(wrap, walletHub || profile || signIn || parentEl.firstChild);
+
+  const select = wrap.querySelector("select");
+  select.value = applyDocumentLanguage();
+  startTranslationObserver();
+  translateStaticUi(select.value);
+  select.addEventListener("change", () => {
+    const next = applyDocumentLanguage(select.value);
+    try {
+      localStorage.setItem(LANGUAGE_STORAGE_KEY, next);
+    } catch {
+      // ignore storage failures
+    }
+    translateStaticUi(next);
+    window.dispatchEvent(new CustomEvent("pumpr:languagechange", { detail: { language: next } }));
+    showCopyToast(`${translatePhrase("Language set to", next)} ${LANGUAGE_OPTIONS.find((option) => option.code === next)?.label || "English"}`);
+  });
+}
 
 export function showCopyToast(message = "Address copied to clipboard") {
   if (!document?.body) return;
@@ -919,6 +2012,7 @@ export function initTopbarWalletProfile({
   if (!document.getElementById("walletHubBtn")) {
     signInBtn?.insertAdjacentHTML("afterend", sharedWalletMarkup());
   }
+  initLanguageSelector(topActions);
 
   const els = {
     walletHubBtn: document.getElementById("walletHubBtn"),
@@ -966,10 +2060,15 @@ export function initTopbarWalletProfile({
     if (els.walletHubBtn) els.walletHubBtn.style.display = evmConnected || generatedConnected ? "inline-flex" : "none";
     if (els.profileMenuBtn) els.profileMenuBtn.style.display = connected ? "inline-flex" : "none";
     setWalletLabel(walletLabel);
+    const finishUpdate = async () => {
+      translateStaticUi();
+      if (typeof onChange === "function") await onChange();
+    };
+
     if (!connected) {
       setProfileOpen(false);
       walletHub?.setOpen(false);
-      if (typeof onChange === "function") await onChange();
+      await finishUpdate();
       return;
     }
     if (generatedConnected) {
@@ -994,7 +2093,7 @@ export function initTopbarWalletProfile({
           if (fresh?.username !== name || String(fresh?.imageUri || "") !== String(imageUri || "")) update();
         }).catch(() => {});
       }
-      if (typeof onChange === "function") await onChange();
+      await finishUpdate();
       return;
     }
     if (solanaConnected && !evmConnected) {
@@ -1014,7 +2113,7 @@ export function initTopbarWalletProfile({
         if (String(next.address || "") !== String(solana.address)) return;
         if (fresh?.username !== name || String(fresh?.imageUri || "") !== String(imageUri || "")) update();
       }).catch(() => {});
-      if (typeof onChange === "function") await onChange();
+      await finishUpdate();
       return;
     }
     const profile = loadUserProfile(ws.address);
@@ -1028,7 +2127,7 @@ export function initTopbarWalletProfile({
     setSharedAvatar(els.profileAvatarLarge, name, imageUri);
     walletHub?.refresh();
     connectPendingReferral(ws.address);
-    if (typeof onChange === "function") await onChange();
+    await finishUpdate();
   };
 
   const controls = initWalletControls({

@@ -25,7 +25,7 @@ import {
   shortAddress,
   walletState
 } from "./core.js?v=20260703sharedauth";
-import { initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260703profileconsistency";
+import { initLanguageSelector, initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260705langselect";
 import { initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
@@ -2774,6 +2774,7 @@ async function onSell() {
 async function init() {
   state.token = getTokenFromUrl();
   state.quoteMode = getQuoteModeFromUrl();
+  initLanguageSelector();
 
   try {
     const cfg = await api.config({ quote: state.quoteMode });

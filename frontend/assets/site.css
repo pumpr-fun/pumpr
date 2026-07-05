@@ -2786,6 +2786,59 @@ button:disabled {
   padding-inline: 0.9rem;
 }
 
+.language-select-wrap {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-height: 38px;
+  border: 1px solid rgba(108, 123, 160, 0.45);
+  border-radius: 12px;
+  background: #101527;
+  color: #e8edff;
+  padding: 0 0.42rem;
+  transition: border-color 0.2s ease, background 0.2s ease, transform 0.2s ease;
+}
+
+.language-select-wrap:hover {
+  border-color: #5b678f;
+  background: #121b34;
+  transform: translateY(-1px);
+}
+
+.language-select-icon {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(115, 244, 164, 0.12);
+  color: var(--accent);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.language-select {
+  width: 48px;
+  min-height: 34px;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #f4f7ff;
+  padding: 0 1rem 0 0;
+  font-size: 0.82rem;
+  font-weight: 800;
+  cursor: pointer;
+  outline: none;
+  appearance: auto;
+}
+
+.language-select option {
+  background: #101527;
+  color: #f4f7ff;
+}
+
 .sign-in-btn {
   background: linear-gradient(135deg, #7f6dff 0%, #5c62d6 100%);
   color: #f6f7ff;
@@ -7996,6 +8049,17 @@ button:disabled {
 
   .top-action-btn {
     flex: 0 0 auto;
+  }
+
+  .language-select-wrap {
+    min-height: 36px;
+    padding-inline: 0.34rem;
+  }
+
+  .language-select {
+    width: 44px;
+    min-height: 32px;
+    font-size: 0.78rem;
   }
 
   .wallet-hub-trigger {

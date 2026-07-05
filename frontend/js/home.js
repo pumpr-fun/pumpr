@@ -18,7 +18,7 @@ import {
   walletState,
   weiToUsd
 } from "./core.js?v=20260703sharedauth";
-import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260703profileconsistency";
+import { initTopbarWalletProfile, setAlert } from "./ui.js?v=20260705langselect";
 import { getLaunchSparklinePath, initCoinSearchOverlay, recordViewedLaunch } from "./searchModal.js?v=20260703sharedauth";
 import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 

@@ -1,5 +1,6 @@
 import { api } from "./api.js?v=20260703adminwallet";
 import { restoreWalletFromSession, walletState } from "./core.js?v=20260703sharedauth";
+import { initLanguageSelector } from "./ui.js?v=20260705langselect";
 
 const form = document.getElementById("pumprCardWaitlistForm");
 const emailInput = document.getElementById("pumprCardEmail");
@@ -12,6 +13,8 @@ const supportCount = document.getElementById("pumprCardSupportCount");
 const supportEntries = document.getElementById("pumprCardSupportEntries");
 const ADMIN_AUTH_SCOPE = "pumpr-admin";
 let adminProofCache = null;
+
+initLanguageSelector();
 
 function setStatus(message = "", isError = false) {
   if (!statusEl) return;

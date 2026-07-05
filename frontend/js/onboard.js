@@ -1,3 +1,5 @@
+import { initLanguageSelector } from "./ui.js?v=20260705langselect";
+
 const STORAGE_KEY = "Pump-r.onboard.v2";
 
 const lessons = [
@@ -1147,4 +1149,5 @@ document.addEventListener("change", (event) => {
   }
 });
 
+initLanguageSelector();
 render();
