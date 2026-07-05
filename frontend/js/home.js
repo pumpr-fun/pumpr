@@ -1,4 +1,4 @@
-import { api } from "./api.js?v=20260703sharedauth";
+import { api } from "./api.js?v=20260705launchsync";
 import {
   CHAIN_OPTIONS,
   defaultUsername,
@@ -24,6 +24,7 @@ import { initSupportWidget } from "./support.js?v=20260703adminwallet";
 
 const WATCHLIST_KEY = "etherpump.watchlist.v1";
 const LAUNCH_CACHE_KEY = "etherpump.launches.cache.v3";
+const LAUNCH_SERVER_SYNC_KEY = "etherpump.launches.serverSync.v1";
 const LAUNCH_CACHE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_PROFILE_IMAGE_BYTES = 2 * 1024 * 1024;
 
@@ -136,6 +137,52 @@ function saveCachedLaunches(launches) {
     );
   } catch {
     // ignore storage failures
+  }
+}
+
+function syncCachedPumpFunLaunchesToServer(rows = []) {
+  const pumpFunRows = filterHomeLaunchRows(rows)
+    .filter((row) => isPumpFunLaunch(row) && String(row?.mint || row?.token || "").trim())
+    .slice(0, 12);
+  if (!pumpFunRows.length || typeof api.pumpfunRecordLaunch !== "function") return;
+  let syncMap = {};
+  try {
+    syncMap = JSON.parse(localStorage.getItem(LAUNCH_SERVER_SYNC_KEY) || "{}") || {};
+  } catch {
+    syncMap = {};
+  }
+  const now = Date.now();
+  for (const row of pumpFunRows) {
+    const mint = String(row.mint || row.token || "").trim();
+    if (!mint) continue;
+    const key = mint.toLowerCase();
+    if (now - Number(syncMap[key] || 0) < 5 * 60 * 1000) continue;
+    syncMap[key] = now;
+    api.pumpfunRecordLaunch({
+      mint,
+      name: row.name,
+      symbol: row.symbol,
+      description: row.description,
+      imageUri: row.imageUri || row.image,
+      creator: row.creator,
+      signature: row.signature,
+      metadataUri: row.metadataUri,
+      pumpfunUrl: row.pumpfunUrl || row.url,
+      createdAt: row.createdAt,
+      kolApplication: row.kolApplication || null
+    }).catch(() => {
+      syncMap[key] = 0;
+      try {
+        localStorage.setItem(LAUNCH_SERVER_SYNC_KEY, JSON.stringify(syncMap));
+      } catch {
+        // ignore local sync bookkeeping failures
+      }
+    });
+  }
+  try {
+    localStorage.setItem(LAUNCH_SERVER_SYNC_KEY, JSON.stringify(syncMap));
+  } catch {
+    // ignore local sync bookkeeping failures
   }
 }
 
@@ -1539,10 +1586,13 @@ async function refreshLaunches(options = {}) {
   const cached = loadCachedLaunches();
   if (!state.launches.length && cached.length) {
     state.launches = cached;
+    syncCachedPumpFunLaunchesToServer(cached);
     updateMoverSignals(state.launches);
     renderTopCommunities();
     renderTrending();
     renderExplore();
+  } else if (cached.length) {
+    syncCachedPumpFunLaunchesToServer(cached);
   }
 
   try {
@@ -1620,6 +1670,7 @@ async function refreshLaunches(options = {}) {
     const cached = loadCachedLaunches();
     if (cached.length) {
       state.launches = cached;
+      syncCachedPumpFunLaunchesToServer(cached);
       updateMoverSignals(state.launches);
       renderTopCommunities();
       renderTrending();

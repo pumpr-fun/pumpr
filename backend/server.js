@@ -7634,6 +7634,38 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
   }
 });
 
+app.post("/api/pumpfun/record-launch", async (req, res) => {
+  try {
+    const mint = String(req.body?.mint || req.body?.token || req.body?.tokenAddress || "").trim();
+    if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) {
+      return res.status(400).json({ error: "Valid Pump.fun mint is required" });
+    }
+    const signature = String(req.body?.signature || "").trim();
+    const snapshot = await readPumpFunCoinSnapshot(mint).catch(() => null);
+    if (!snapshot && !signature) {
+      return res.status(404).json({ error: "Pump.fun launch is not visible yet. Wait a few seconds and refresh Home." });
+    }
+    const recordedLaunch = await recordPumpFunLaunch({
+      ...(snapshot || {}),
+      mint,
+      name: req.body?.name || snapshot?.name,
+      symbol: req.body?.symbol || snapshot?.symbol,
+      description: req.body?.description || snapshot?.description,
+      imageUri: req.body?.imageUri || req.body?.image || snapshot?.imageUri,
+      creator: req.body?.creator || req.body?.user || snapshot?.creator,
+      kolApplication: req.body?.kolApplication || snapshot?.kolApplication,
+      signature: signature || snapshot?.signature,
+      metadataUri: req.body?.metadataUri || snapshot?.metadataUri,
+      pumpfunUrl: req.body?.pumpfunUrl || snapshot?.pumpfunUrl,
+      createdAt: req.body?.createdAt || Math.floor(Date.now() / 1000)
+    });
+    if (!recordedLaunch) return res.status(400).json({ error: "Pump.fun launch record could not be normalized" });
+    res.json({ ok: true, launch: recordedLaunch });
+  } catch (error) {
+    res.status(Number(error.status || 500)).json({ error: error.message || "Unable to record Pump.fun launch" });
+  }
+});
+
 app.post("/api/pumpfun/kol-buy", async (req, res) => {
   try {
     const { Connection: SolanaConnection, PublicKey: SolanaPublicKey, Transaction: SolanaTransaction } = await loadSolanaWeb3();
