@@ -796,7 +796,7 @@ async function withPumpFunSolanaRpc(SolanaConnection, label, worker, options = {
       return await worker(connection, rpcUrl);
     } catch (error) {
       lastError = error;
-      const retryable = isRetryableSolanaRpcError(error) || options.retryAll === true;
+      const retryable = !error?.noRpcRetry && (isRetryableSolanaRpcError(error) || options.retryAll === true);
       if (!retryable || index === urls.length - 1) break;
       console.warn(`${label} Solana RPC failed, trying fallback ${index + 2}/${urls.length}: ${error?.message || error}`);
     }
@@ -1224,6 +1224,10 @@ async function ensureSupabaseStorageBucket() {
 
   const text = await createRes.text().catch(() => "");
   if (String(text || "").toLowerCase().includes("already exists")) return true;
+  if ([408, 429, 500, 502, 503, 504, 544].includes(Number(createRes.status))) {
+    console.warn(`Supabase bucket create deferred: ${createRes.status} ${text}`.trim());
+    return false;
+  }
   throw new Error(`Supabase bucket create failed: ${createRes.status} ${text}`.trim());
 }
 
@@ -1276,6 +1280,10 @@ async function uploadBinaryToSupabaseStorage(binary, ext = "png", folder = "laun
     }
     if (!response.ok) {
       const retryText = await response.text().catch(() => "");
+      const combinedText = String(retryText || text || "");
+      if (String(combinedText).toLowerCase().includes("bucket not found")) {
+        throw new Error(`Supabase storage bucket "${SUPABASE_STORAGE_BUCKET}" is not ready. Create it in Supabase Storage or retry after the database timeout clears.`);
+      }
       throw new Error(`Supabase storage upload failed: ${response.status} ${retryText || text}`.trim());
     }
   }
@@ -5138,6 +5146,49 @@ function parseAmountToWei(amount, decimals = 18) {
   }
 }
 
+function parseSolToLamports(amount, fallback = "0") {
+  const raw = String(amount ?? "").trim() || String(fallback);
+  return parseAmountToWei(raw, 9);
+}
+
+function formatSolLamports(lamports) {
+  const safeLamports = typeof lamports === "bigint" ? lamports : BigInt(Math.max(0, Number(lamports || 0)));
+  const whole = safeLamports / 1_000_000_000n;
+  const fraction = (safeLamports % 1_000_000_000n).toString().padStart(9, "0").replace(/0+$/, "");
+  return fraction ? `${whole}.${fraction.slice(0, 4)} SOL` : `${whole} SOL`;
+}
+
+const PUMPFUN_CREATE_MIN_LAMPORTS = parseSolToLamports(process.env.PUMPFUN_CREATE_MIN_SOL, "0.025");
+const PUMPFUN_TX_BUFFER_LAMPORTS = parseSolToLamports(process.env.PUMPFUN_TX_BUFFER_SOL, "0.004");
+const PUMPFUN_TRANSFER_BUFFER_LAMPORTS = parseSolToLamports(process.env.PUMPFUN_TRANSFER_BUFFER_SOL, "0.003");
+
+async function assertSolanaWalletHasLamports(connection, publicKey, requiredLamports, actionLabel) {
+  const required = typeof requiredLamports === "bigint" ? requiredLamports : BigInt(Math.max(0, Number(requiredLamports || 0)));
+  if (required <= 0n) return { balanceLamports: 0n, requiredLamports: required };
+  let balanceLamports = 0n;
+  try {
+    balanceLamports = BigInt(await connection.getBalance(publicKey, "confirmed"));
+  } catch (error) {
+    const wrapped = new Error(`Could not check SOL balance before ${actionLabel}. Try again in a moment.`);
+    wrapped.status = 503;
+    wrapped.code = "SOL_BALANCE_CHECK_FAILED";
+    wrapped.cause = error;
+    throw wrapped;
+  }
+  if (balanceLamports < required) {
+    const shortage = required - balanceLamports;
+    const message = `Not enough SOL for ${actionLabel}. Need about ${formatSolLamports(required)} and this wallet has ${formatSolLamports(balanceLamports)}. Add at least ${formatSolLamports(shortage)} and try again before opening Phantom.`;
+    const error = new Error(message);
+    error.status = 400;
+    error.code = "INSUFFICIENT_SOL";
+    error.balanceLamports = balanceLamports.toString();
+    error.requiredLamports = required.toString();
+    error.noRpcRetry = true;
+    throw error;
+  }
+  return { balanceLamports, requiredLamports: required };
+}
+
 async function readGeckoPoolStatus(chainId, pairAddress) {
   const pair = normalizeAddress(pairAddress);
   const urls = buildGeckoPoolUrls(chainId, pair);
@@ -7296,6 +7347,35 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       return res.status(400).json({ error: "Invalid Solana wallet public key" });
     }
 
+    const requestedDevBuyLamports = (() => {
+      const decimalSol = String(req.body?.starterBuySol || req.body?.devBuySol || "").trim();
+      if (decimalSol) return parseSolToLamports(decimalSol);
+      try {
+        return BigInt(String(req.body?.starterBuy || "0"));
+      } catch {
+        return 0n;
+      }
+    })();
+    const devBuyLamports = requestedDevBuyLamports > 0n ? requestedDevBuyLamports : 0n;
+    const kolBuyLamports = kolApplication?.enabled ? parseSolToLamports(kolApplication.buySol || "0") : 0n;
+    const plannedParts = ["create"];
+    if (devBuyLamports > 0n) plannedParts.push("dev buy");
+    if (kolBuyLamports > 0n) plannedParts.push("Manlet Mode buy");
+    await withPumpFunSolanaRpc(
+      SolanaConnection,
+      "Pump.fun launch balance check",
+      async (connection) => {
+        await assertSolanaWalletHasLamports(
+          connection,
+          user,
+          PUMPFUN_CREATE_MIN_LAMPORTS + devBuyLamports + kolBuyLamports + PUMPFUN_TX_BUFFER_LAMPORTS,
+          `Pump.fun ${plannedParts.join(", ")}`
+        );
+        return true;
+      },
+      { retryAll: true }
+    );
+
     const metadataUri = await createPumpFunMetadataUri(req, {
       name,
       symbol,
@@ -7308,16 +7388,6 @@ app.post("/api/pumpfun/launch", async (req, res) => {
 
     const vanityMint = generatePumpFunMintKeypair(SolanaKeypair);
     const mintKeypair = vanityMint.keypair;
-    const requestedDevBuyLamports = (() => {
-      const decimalSol = String(req.body?.starterBuySol || req.body?.devBuySol || "").trim();
-      if (decimalSol) return parseAmountToWei(decimalSol, 9);
-      try {
-        return BigInt(String(req.body?.starterBuy || "0"));
-      } catch {
-        return 0n;
-      }
-    })();
-    const devBuyLamports = requestedDevBuyLamports > 0n ? requestedDevBuyLamports : 0n;
     const requestedLatest = {
       blockhash: String(req.body?.blockhash || "").trim(),
       lastValidBlockHeight: Number(req.body?.lastValidBlockHeight || 0)
@@ -7422,7 +7492,13 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       lastValidBlockHeight: latest.lastValidBlockHeight
     });
   } catch (error) {
-    res.status(Number(error.status || 500)).json({ error: error.message || "Pump.fun SDK transaction build failed", duplicate: error.duplicate || null });
+    res.status(Number(error.status || 500)).json({
+      error: error.message || "Pump.fun SDK transaction build failed",
+      code: error.code || null,
+      duplicate: error.duplicate || null,
+      balanceLamports: error.balanceLamports || null,
+      requiredLamports: error.requiredLamports || null
+    });
   }
 });
 
@@ -7555,6 +7631,12 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
       SolanaConnection,
       "Manlet Mode buy prep",
       async (connection, rpcUrl) => {
+        await assertSolanaWalletHasLamports(
+          connection,
+          user,
+          parseSolToLamports(kolApplication.buySol || "0") + PUMPFUN_TX_BUFFER_LAMPORTS,
+          "Manlet Mode buy"
+        );
         const [latest, globalInfo, feeConfigInfo] = await Promise.all([
           connection.getLatestBlockhash("confirmed"),
           connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA, "confirmed"),
@@ -7632,7 +7714,12 @@ app.post("/api/pumpfun/kol-buy", async (req, res) => {
       lastValidBlockHeight: latest.lastValidBlockHeight
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Unable to build Manlet Mode buy transaction" });
+    res.status(Number(error.status || 500)).json({
+      error: error.message || "Unable to build Manlet Mode buy transaction",
+      code: error.code || null,
+      balanceLamports: error.balanceLamports || null,
+      requiredLamports: error.requiredLamports || null
+    });
   }
 });
 
@@ -7657,6 +7744,12 @@ app.post("/api/pumpfun/dev-buy", async (req, res) => {
       SolanaConnection,
       "Pump.fun dev buy prep",
       async (connection, rpcUrl) => {
+        await assertSolanaWalletHasLamports(
+          connection,
+          user,
+          parseSolToLamports(buySol) + PUMPFUN_TX_BUFFER_LAMPORTS,
+          "Pump.fun dev buy"
+        );
         const [latest, globalInfo, feeConfigInfo] = await Promise.all([
           connection.getLatestBlockhash("confirmed"),
           connection.getAccountInfo(PUMP_MOD.GLOBAL_PDA, "confirmed"),
@@ -7717,7 +7810,12 @@ app.post("/api/pumpfun/dev-buy", async (req, res) => {
       lastValidBlockHeight: latest.lastValidBlockHeight
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Unable to build Pump.fun dev buy transaction" });
+    res.status(Number(error.status || 500)).json({
+      error: error.message || "Unable to build Pump.fun dev buy transaction",
+      code: error.code || null,
+      balanceLamports: error.balanceLamports || null,
+      requiredLamports: error.requiredLamports || null
+    });
   }
 });
 
@@ -7761,6 +7859,12 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
       SolanaConnection,
       "Manlet Mode transfer prep",
       async (connection, rpcUrl) => {
+        await assertSolanaWalletHasLamports(
+          connection,
+          user,
+          PUMPFUN_TRANSFER_BUFFER_LAMPORTS,
+          "Manlet Mode transfer"
+        );
         const [latest, mintInfo] = await Promise.all([
           connection.getLatestBlockhash("confirmed"),
           connection.getAccountInfo(mint, "confirmed")
@@ -7816,7 +7920,12 @@ app.post("/api/pumpfun/kol-transfer", async (req, res) => {
       lastValidBlockHeight: latest.lastValidBlockHeight
     });
   } catch (error) {
-    res.status(500).json({ error: error.message || "Unable to build token transfer transaction" });
+    res.status(Number(error.status || 500)).json({
+      error: error.message || "Unable to build token transfer transaction",
+      code: error.code || null,
+      balanceLamports: error.balanceLamports || null,
+      requiredLamports: error.requiredLamports || null
+    });
   }
 });
 
