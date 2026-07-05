@@ -1758,6 +1758,7 @@ async function launchPumpFun(details) {
   let kolTransferSignature = "";
   let kolApplication = details.kolApplication || null;
   let finalizedLaunch = null;
+  let launchRecordWarning = "";
   let payload = null;
   let mint = "";
   let pumpfunUrl = "";
@@ -1817,6 +1818,7 @@ async function launchPumpFun(details) {
         });
         signature = String(finalized?.signature || "");
         finalizedLaunch = finalized?.launch || null;
+        launchRecordWarning = String(finalized?.recordWarning || "");
         break;
       } catch (error) {
         if (attempt === 0 && isSolanaBlockhashExpiredError(error)) continue;
@@ -1922,7 +1924,7 @@ async function launchPumpFun(details) {
   ui.resultLink.href = pumpfunUrl || `https://pump.fun/coin/${encodeURIComponent(mint)}`;
   ui.resultLink.textContent = "Open Pump.fun token page";
   ui.resultLink.style.display = "inline-block";
-  setAlert(ui.alert, `Pump.fun transaction sent${signature ? ` (${shortAddress(signature)})` : ""}${devBuySignature ? `; dev buy completed (${shortAddress(devBuySignature)})` : ""}${kolBuySignature ? `; token buy completed (${shortAddress(kolBuySignature)})` : ""}${kolTransferSignature ? `; token transfer sent (${shortAddress(kolTransferSignature)})` : ""}. Redirecting...`);
+  setAlert(ui.alert, `Pump.fun transaction sent${signature ? ` (${shortAddress(signature)})` : ""}${devBuySignature ? `; dev buy completed (${shortAddress(devBuySignature)})` : ""}${kolBuySignature ? `; token buy completed (${shortAddress(kolBuySignature)})` : ""}${kolTransferSignature ? `; token transfer sent (${shortAddress(kolTransferSignature)})` : ""}.${launchRecordWarning ? " Launch record is syncing because Supabase is busy." : ""} Redirecting...`);
   window.setTimeout(() => {
     window.location.href = ui.resultLink.href;
   }, 900);

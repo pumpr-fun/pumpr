@@ -6277,6 +6277,10 @@ function emptyPumpFunLaunchesStore() {
   return { launches: [] };
 }
 
+function waitMs(ms) {
+  return new Promise((resolve) => setTimeout(resolve, Math.max(0, Number(ms || 0))));
+}
+
 function normalizePumpFunLaunch(row = {}) {
   const mint = String(row.mint || row.token || row.tokenAddress || "").trim();
   if (!mint || !/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) return null;
@@ -6429,21 +6433,31 @@ async function readPumpFunLaunchesRemote() {
 async function writePumpFunLaunchesRemote(store) {
   if (!isSupabaseStorageConfigured() || !SUPABASE_PUMPFUN_LAUNCHES_OBJECT) return false;
   await ensureSupabaseStorageBucket();
-  const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_LAUNCHES_OBJECT), {
-    method: "POST",
-    headers: {
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      "Content-Type": "application/json; charset=utf-8",
-      "x-upsert": "true"
-    },
-    body: JSON.stringify(sanitizePumpFunLaunchesStore(store), null, 2)
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(`Supabase Pump.fun launch write failed: ${response.status} ${text}`.trim());
+  const body = JSON.stringify(sanitizePumpFunLaunchesStore(store), null, 2);
+  let lastText = "";
+  let lastStatus = 0;
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const response = await fetch(getSupabaseStorageUploadUrl(SUPABASE_PUMPFUN_LAUNCHES_OBJECT), {
+      method: "POST",
+      headers: {
+        apikey: SUPABASE_SERVICE_ROLE_KEY,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+        "Content-Type": "application/json; charset=utf-8",
+        "x-upsert": "true"
+      },
+      body
+    });
+    if (response.ok) return true;
+    lastStatus = response.status;
+    lastText = await response.text().catch(() => "");
+    const lowered = String(lastText || "").toLowerCase();
+    const retryable = [408, 425, 429, 500, 502, 503, 504, 544].includes(Number(response.status))
+      || lowered.includes("too_many_connections")
+      || lowered.includes("database") && lowered.includes("timeout");
+    if (!retryable || attempt === 3) break;
+    await waitMs(400 * (attempt + 1) ** 2);
   }
-  return true;
+  throw new Error(`Supabase Pump.fun launch write failed: ${lastStatus} ${lastText}`.trim());
 }
 
 async function readPumpFunLaunchesPersistent(options = {}) {
@@ -7581,7 +7595,7 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
         );
     const { signature, rpcUrl } = sent;
 
-    const recordedLaunch = await recordPumpFunLaunch({
+    const launchRow = {
       mint,
       name: pending.name,
       symbol: pending.symbol,
@@ -7592,10 +7606,21 @@ app.post("/api/pumpfun/finalize", async (req, res) => {
       signature,
       metadataUri: pending.metadataUri,
       createdAt: Math.floor(Date.now() / 1000)
-    });
+    };
+    let recordedLaunch = null;
+    let launchRecordWarning = "";
+    try {
+      recordedLaunch = await recordPumpFunLaunch(launchRow);
+    } catch (error) {
+      launchRecordWarning = error?.message || "Launch confirmed, but Pump-r could not save the launch record right now.";
+      console.warn(`Pump.fun launch confirmed but record write failed: ${launchRecordWarning}`);
+      recordedLaunch = normalizePumpFunLaunch(launchRow);
+    }
 
     res.json({
       ok: true,
+      recordSaved: !launchRecordWarning,
+      recordWarning: launchRecordWarning || null,
       signature,
       mint,
       tokenAddress: mint,
