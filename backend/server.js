@@ -7402,6 +7402,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
         ]
       }).compileToV0Message(pumpFunLookupTable)
     );
+    tx.sign([mintKeypair]);
     let presignSimulationWarning = "";
     try {
       await simulateSolanaTransaction(connection, tx, "Pump.fun create");
@@ -7443,6 +7444,7 @@ app.post("/api/pumpfun/launch", async (req, res) => {
       mintSuffixDurationMs: vanityMint.durationMs,
       transactionBase64: Buffer.from(tx.serialize()).toString("base64"),
       versionedTransaction: true,
+      mintPresigned: true,
       signingToken,
       kolApplication,
       holderEligibility,
