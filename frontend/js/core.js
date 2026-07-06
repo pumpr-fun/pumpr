@@ -1188,6 +1188,14 @@ function saveProfilesStore(store) {
   }
 }
 
+function notifyProfileUpdated(profile = {}) {
+  try {
+    window.dispatchEvent(new CustomEvent("pumpr:profile-updated", { detail: profile }));
+  } catch {
+    // ignore non-browser contexts
+  }
+}
+
 function loadProfileFreshStore() {
   try {
     const raw = localStorage.getItem(PROFILE_REMOTE_FRESH_KEY);
@@ -1363,6 +1371,7 @@ function cacheProfileLocal(address, value = {}) {
   };
   saveProfilesStore(store);
   markProfileFresh(normalized);
+  notifyProfileUpdated(next);
   return next;
 }
 

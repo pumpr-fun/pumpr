@@ -6,7 +6,7 @@ import {
   shortAddress,
   solanaWalletState,
   walletState
-} from "./core.js?v=20260703sharedauth";
+} from "./core.js?v=20260706socialavatar";
 import { initTopbarWalletProfile, showCopyToast } from "./ui.js?v=20260705langselect";
 
 const REFRESH_MS = 40_000;
@@ -143,9 +143,24 @@ function connectedIdentity() {
     handle: normalizeHandle(currentSocialProfile?.handle || username || shortAddress(wallet || "")),
     displayName: currentSocialProfile?.displayName || local?.username || generated.name || generated.username || shortAddress(wallet || ""),
     bio: currentSocialProfile?.bio || local?.bio || "",
-    imageUri: currentSocialProfile?.imageUri || local?.imageUri || generated.image || "",
+    imageUri: local?.imageUri || currentSocialProfile?.imageUri || generated.image || "",
     source: generated.type || (ws.address ? "wallet" : "social"),
     xUsername: generated.username || generated.xUsername || ""
+  };
+}
+
+function mergedSocialIdentity(profile = currentSocialProfile) {
+  const identity = connectedIdentity();
+  const wallet = identity.wallet;
+  const local = wallet ? loadUserProfile(wallet) : {};
+  const social = profile || {};
+  return {
+    ...identity,
+    ...social,
+    handle: normalizeHandle(social.handle || identity.handle || shortAddress(wallet || "")),
+    displayName: social.displayName || identity.displayName || shortAddress(wallet || ""),
+    bio: social.bio || identity.bio || "",
+    imageUri: local?.imageUri || social.imageUri || identity.imageUri || ""
   };
 }
 
@@ -330,21 +345,20 @@ function renderImagePreview(uri = "", fallbackName = "") {
 
 function updateIdentityUi() {
   const wallet = connectedWallet();
-  const identity = connectedIdentity();
-  const profile = currentSocialProfile || {};
-  const name = profile.displayName || identity.displayName || "Pump-r Social";
-  const handle = profile.handle || identity.handle || "connect";
+  const identity = mergedSocialIdentity();
+  const name = identity.displayName || "Pump-r Social";
+  const handle = identity.handle || "connect";
   if (ui.meName) ui.meName.textContent = name;
   if (ui.meHandle) ui.meHandle.textContent = wallet ? `@${handle}` : "@connect";
   if (ui.walletCopyBtn) ui.walletCopyBtn.textContent = wallet ? shortAddress(wallet) : "Connect to copy wallet";
   if (ui.myTier) ui.myTier.textContent = currentStats?.tier || (wallet ? "New" : "Connect");
   if (ui.myXp) ui.myXp.textContent = formatNumber(currentStats?.xp || 0);
   if (ui.myPosts) ui.myPosts.textContent = formatNumber(currentStats?.posts || 0);
-  setAvatar(ui.avatar, { ...identity, ...profile });
-  setAvatar(ui.meAvatar, { ...identity, ...profile });
+  setAvatar(ui.avatar, identity);
+  setAvatar(ui.meAvatar, identity);
   if (ui.handleInput && !ui.handleInput.value) ui.handleInput.value = normalizeHandle(handle);
   if (ui.displayInput && !ui.displayInput.value) ui.displayInput.value = name;
-  if (ui.bioInput && !ui.bioInput.value) ui.bioInput.value = profile.bio || identity.bio || "";
+  if (ui.bioInput && !ui.bioInput.value) ui.bioInput.value = identity.bio || "";
 }
 
 async function ensureConnected() {
@@ -357,13 +371,13 @@ async function ensureConnected() {
 }
 
 function openProfileEditor() {
-  const identity = connectedIdentity();
-  pendingImageUri = currentSocialProfile?.imageUri || identity.imageUri || "";
+  const identity = mergedSocialIdentity();
+  pendingImageUri = identity.imageUri || "";
   if (ui.handleInput) ui.handleInput.value = currentSocialProfile?.handle || identity.handle || "";
   if (ui.displayInput) ui.displayInput.value = currentSocialProfile?.displayName || identity.displayName || "";
   if (ui.imageInput) ui.imageInput.value = pendingImageUri || "";
   if (ui.bioInput) ui.bioInput.value = currentSocialProfile?.bio || identity.bio || "";
-  renderImagePreview(pendingImageUri, currentSocialProfile?.displayName || identity.displayName);
+  renderImagePreview(pendingImageUri, identity.displayName);
   if (ui.profileOverlay) ui.profileOverlay.hidden = false;
 }
 
@@ -382,7 +396,10 @@ async function loadMySocialProfile({ fresh = false } = {}) {
   try {
     await hydrateUserProfile(wallet, { force: false }).catch(() => null);
     const payload = await api.socialProfile(wallet, { fresh });
-    currentSocialProfile = payload.profile || null;
+    const local = loadUserProfile(wallet);
+    currentSocialProfile = payload.profile
+      ? { ...payload.profile, imageUri: payload.profile.imageUri || local?.imageUri || "" }
+      : null;
     currentStats = payload.stats || null;
   } catch (error) {
     status(ui.profileStatus, error.message || "Could not load social profile yet.", "warn");
@@ -400,20 +417,22 @@ async function saveSocialProfile() {
     status(ui.profileStatus, "Use at least 3 letters or numbers for your social name.", "warn");
     return;
   }
-  const identity = connectedIdentity();
+  const identity = mergedSocialIdentity();
   const body = {
     ...identity,
     wallet,
     handle,
     displayName: ui.displayInput?.value || identity.displayName || handle,
     bio: ui.bioInput?.value || "",
-    imageUri: pendingImageUri || ui.imageInput?.value || identity.imageUri || ""
+    imageUri: pendingImageUri || ui.imageInput?.value || loadUserProfile(wallet)?.imageUri || identity.imageUri || ""
   };
   setButtonBusy(ui.profileSaveBtn, true, "Saving...");
   status(ui.profileStatus, "Saving profile...", "");
   try {
     const payload = await api.saveSocialProfile(body);
-    currentSocialProfile = payload.profile || null;
+    currentSocialProfile = payload.profile
+      ? { ...payload.profile, imageUri: payload.profile.imageUri || body.imageUri || "" }
+      : null;
     currentStats = payload.stats || null;
     await saveUserProfile(wallet, {
       username: body.displayName,
@@ -446,7 +465,7 @@ async function publishPost() {
     status(ui.postStatus, "Write a post first.", "warn");
     return;
   }
-  const identity = connectedIdentity();
+  const identity = mergedSocialIdentity();
   setButtonBusy(ui.postBtn, true, "Posting...");
   status(ui.postStatus, "Publishing to Pump-r Social...", "");
   try {
@@ -454,14 +473,16 @@ async function publishPost() {
       wallet,
       handle: currentSocialProfile.handle || identity.handle,
       displayName: currentSocialProfile.displayName || identity.displayName,
-      imageUri: currentSocialProfile.imageUri || identity.imageUri,
+      imageUri: identity.imageUri || currentSocialProfile?.imageUri || "",
       body: text,
       token: ui.token?.value || "",
       chain: ui.chain?.value || "SOL",
       mediaUrl: pendingPostMediaUri || ui.media?.value || "",
       source: identity.source || "social"
     });
-    currentSocialProfile = payload.profile || currentSocialProfile;
+    currentSocialProfile = payload.profile
+      ? { ...payload.profile, imageUri: payload.profile.imageUri || identity.imageUri || "" }
+      : currentSocialProfile;
     currentStats = payload.stats || currentStats;
     ui.body.value = "";
     ui.media.value = "";
@@ -653,8 +674,8 @@ function renderProfileView() {
   if (!wallet) {
     return `<div class="socialx-empty">Sign in with X, email, Phantom, or EVM wallet to build your Pump-r Social profile.</div>`;
   }
-  const identity = connectedIdentity();
-  const profile = currentSocialProfile || identity;
+  const identity = mergedSocialIdentity();
+  const profile = identity;
   const authored = posts().filter(isMine);
   const replied = posts().filter((post) => (post.replies || []).some((reply) => String(reply.authorWallet || "").toLowerCase() === wallet.toLowerCase()));
   return `
@@ -850,7 +871,7 @@ function setView(view) {
 async function reactToPost(postId, type, active) {
   const wallet = await ensureConnected();
   if (!wallet) return;
-  const identity = connectedIdentity();
+  const identity = mergedSocialIdentity();
   try {
     const payload = await api.socialReact(postId, {
       wallet,
@@ -858,7 +879,7 @@ async function reactToPost(postId, type, active) {
       active,
       handle: currentSocialProfile?.handle || identity.handle,
       displayName: currentSocialProfile?.displayName || identity.displayName,
-      imageUri: currentSocialProfile?.imageUri || identity.imageUri,
+      imageUri: identity.imageUri || currentSocialProfile?.imageUri || "",
       source: identity.source || "social"
     });
     replacePost(payload.post);
@@ -873,14 +894,14 @@ async function sendReply(postId, text) {
   if (!body) return;
   const wallet = await ensureConnected();
   if (!wallet) return;
-  const identity = connectedIdentity();
+  const identity = mergedSocialIdentity();
   try {
     const payload = await api.socialReply(postId, {
       wallet,
       body,
       handle: currentSocialProfile?.handle || identity.handle,
       displayName: currentSocialProfile?.displayName || identity.displayName,
-      imageUri: currentSocialProfile?.imageUri || identity.imageUri,
+      imageUri: identity.imageUri || currentSocialProfile?.imageUri || "",
       source: identity.source || "social"
     });
     currentStats = payload.stats || currentStats;
@@ -1063,6 +1084,28 @@ function bindEvents() {
       await sendReply(openThreadId, ui.threadReplyInput?.value || "");
       ui.threadReplyInput.value = "";
     }
+  });
+
+  window.addEventListener("pumpr:profile-updated", (event) => {
+    const wallet = connectedWallet();
+    const profile = event.detail || {};
+    if (!wallet || String(profile.address || "").toLowerCase() !== wallet.toLowerCase()) return;
+    if (currentSocialProfile) {
+      currentSocialProfile = {
+        ...currentSocialProfile,
+        displayName: currentSocialProfile.displayName || profile.username,
+        bio: currentSocialProfile.bio || profile.bio,
+        imageUri: profile.imageUri || currentSocialProfile.imageUri || ""
+      };
+    }
+    updateIdentityUi();
+    renderFeed();
+  });
+
+  window.addEventListener("storage", (event) => {
+    if (event.key !== "etherpump.profile.v1") return;
+    updateIdentityUi();
+    renderFeed();
   });
 }
 
