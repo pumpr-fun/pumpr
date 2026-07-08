@@ -183,6 +183,18 @@
       "dest": "/frontend/airdrop.html"
     },
     {
+      "src": "/rh-swap$",
+      "dest": "/frontend/rh-swap.html"
+    },
+    {
+      "src": "/swap$",
+      "dest": "/frontend/rh-swap.html"
+    },
+    {
+      "src": "/robinhood-swap$",
+      "dest": "/frontend/rh-swap.html"
+    },
+    {
       "src": "/referrals$",
       "dest": "/frontend/referrals.html"
     },
