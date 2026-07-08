@@ -4117,12 +4117,13 @@ function rhSwapTreasuryFallbackEnabled() {
 }
 
 function rhSwapDirectUserLifiEnabled() {
-  const raw = String(process.env.PUMPR_RH_SWAP_DIRECT_USER_LIFI_ENABLED || "1").trim().toLowerCase();
-  return !["0", "false", "no", "off"].includes(raw);
+  const raw = String(process.env.PUMPR_RH_SWAP_DIRECT_USER_LIFI_ENABLED || "0").trim().toLowerCase();
+  const unsafeOverride = String(process.env.PUMPR_RH_SWAP_ALLOW_PHANTOM_COMPLEX_ROUTE || "0").trim().toLowerCase();
+  return ["1", "true", "yes", "on"].includes(raw) && ["1", "true", "yes", "on"].includes(unsafeOverride);
 }
 
 function rhSwapTreasuryRoutingEnabled() {
-  const raw = String(process.env.PUMPR_RH_SWAP_TREASURY_ROUTING_ENABLED || "0").trim().toLowerCase();
+  const raw = String(process.env.PUMPR_RH_SWAP_TREASURY_ROUTING_ENABLED || "1").trim().toLowerCase();
   return ["1", "true", "yes", "on"].includes(raw);
 }
 
@@ -4156,7 +4157,7 @@ function assertRhSwapRealExecutionConfigured() {
     throw new Error("PUMPR_RH_SWAP_SOLANA_TREASURY is required for real swaps.");
   }
   if (!rhSwapDirectUserLifiEnabled() && !(rhSwapTreasuryRoutingEnabled() && rhSwapSolanaTreasurySecret()) && !(rhSwapTreasuryFallbackEnabled() && rhSwapEvmTreasuryPrivateKey())) {
-    throw new Error("Enable direct LI.FI routing. Dev wallet is only allowed as SOL gas backup, not as a PUMPR swap router.");
+    throw new Error("Safe RH swaps require PUMPR_RH_SWAP_SOLANA_TREASURY_SECRET_KEY so the connected wallet only signs a simple PUMPR transfer. Direct Phantom LI.FI routing is disabled because Phantom may block complex cross-chain route transactions.");
   }
 }
 
@@ -4996,8 +4997,7 @@ async function buildRhSwapDepositRequest(value = {}) {
   const treasuryKeypair = rhSwapSolanaTreasuryKeypair(SolanaKeypair);
   const treasury = treasuryKeypair?.publicKey || new SolanaPublicKey(rhSwapSolanaTreasury());
   const feePayerKeypair = rhSwapSolanaFeePayerKeypair(SolanaKeypair);
-  const feePayer = feePayerKeypair?.publicKey || treasuryKeypair?.publicKey || user;
-  const solanaGasSponsored = Boolean(feePayerKeypair);
+  const feePayer = user;
   const id = quote.quoteId.replace(/^quote_/, "rhswap_");
 
   const rpcState = await withPumpFunSolanaRpc(
@@ -5014,11 +5014,17 @@ async function buildRhSwapDepositRequest(value = {}) {
       const decimals = Number(mintAccount.decimals || 0);
       const amountRaw = parseUnitsFloor(quote.amountPumpr, decimals);
       if (amountRaw <= 0n) throw new Error("PUMPR amount is too small.");
+      const gasTopup = await maybeTopUpRhSwapUserGas({
+        connection,
+        user,
+        feePayerKeypair,
+        requiredLamports: PUMPFUN_TRANSFER_BUFFER_LAMPORTS
+      });
       await assertSolanaWalletHasLamports(
         connection,
-        feePayer,
+        user,
         PUMPFUN_TRANSFER_BUFFER_LAMPORTS,
-        solanaGasSponsored ? "sponsored PUMPR swap fee payment" : "PUMPR swap deposit"
+        gasTopup?.toppedUp ? "PUMPR swap deposit after sponsored SOL top-up" : "PUMPR swap deposit"
       );
       const sourceAta = splToken.getAssociatedTokenAddressSync(mint, user, true, tokenProgram);
       const treasuryAta = splToken.getAssociatedTokenAddressSync(mint, treasury, true, tokenProgram);
@@ -5038,8 +5044,13 @@ async function buildRhSwapDepositRequest(value = {}) {
         memoIx
       ];
       const tx = new SolanaTransaction({ feePayer, recentBlockhash: latest.blockhash }).add(...instructions);
-      if (feePayerKeypair) tx.partialSign(feePayerKeypair);
-      return { rpcUrl, latest, tokenProgram, decimals, amountRaw, sourceAta, treasuryAta, tx };
+      assertPhantomSingleUserSigner(tx, user, "RH swap PUMPR deposit");
+      try {
+        await simulateSolanaTransaction(connection, tx, "RH swap PUMPR deposit");
+      } catch (error) {
+        throw new Error(phantomSimulationErrorMessage(error, "RH swap PUMPR deposit"));
+      }
+      return { rpcUrl, latest, tokenProgram, decimals, amountRaw, sourceAta, treasuryAta, tx, gasTopup };
     },
     { retryAll: true }
   );
@@ -5068,16 +5079,16 @@ async function buildRhSwapDepositRequest(value = {}) {
     quoteId: quote.quoteId,
     status: "awaiting_deposit_signature",
     stage: "Sign PUMPR deposit",
-    statusMessage: solanaGasSponsored
-      ? "Open Phantom and sign the $PUMPR transfer. Pump-r sponsors Solana gas and routes the deposited PUMPR automatically."
-      : "Open Phantom and sign the $PUMPR transfer. This wallet pays the tiny Solana fee unless a dev/admin Solana fee-payer key is configured.",
+    statusMessage: rpcState.gasTopup?.toppedUp
+      ? "Pump-r topped up SOL gas only. Open Phantom and sign the simple $PUMPR transfer from your connected wallet."
+      : "Open Phantom and sign the simple $PUMPR transfer from your connected wallet.",
     mode: "real-cross-chain-settlement",
     routeProvider: rhSwapLifiEnabled() && treasuryKeypair ? "lifi" : "treasury",
     routeTool: lifiPreflight?.quote?.tool || "",
     solanaAddress: quote.solanaAddress,
     depositTreasury: treasury.toBase58(),
     solanaFeePayer: feePayer.toBase58(),
-    solanaGasSponsored,
+    solanaGasSponsored: Boolean(rpcState.gasTopup?.toppedUp),
     recipient,
     recipientType: sanitizeSwapNote(value.recipientType || "existing", 40),
     targetToken: quote.targetToken,
@@ -5119,7 +5130,8 @@ async function buildRhSwapDepositRequest(value = {}) {
       treasury: treasury.toBase58(),
       treasuryTokenAccount: rpcState.treasuryAta.toBase58(),
       solanaFeePayer: feePayer.toBase58(),
-      solanaGasSponsored,
+      solanaGasSponsored: Boolean(rpcState.gasTopup?.toppedUp),
+      solanaGasTopup: rpcState.gasTopup || null,
       tokenProgram: rpcState.tokenProgram.toBase58()
     },
     rpcUrl: rpcState.rpcUrl,
