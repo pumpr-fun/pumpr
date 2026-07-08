@@ -493,6 +493,29 @@ function activeRecipient() {
   return normalizeEvmAddress(ui.recipient?.value || "");
 }
 
+function ensureGeneratedDestination() {
+  const existing = activeRecipient();
+  if (existing) return existing;
+  if (state.mode !== "generated") return "";
+  if (!connectedSolanaAddress()) throw new Error("Connect a Solana wallet first.");
+  const wallet = ethers.Wallet.createRandom();
+  saveDestination({
+    type: "generated",
+    address: wallet.address,
+    privateKey: wallet.privateKey,
+    mnemonic: wallet.mnemonic?.phrase || "",
+    createdAt: Date.now()
+  });
+  renderDestination();
+  window.dispatchEvent(new CustomEvent("pumpr:rhWalletChanged"));
+  return wallet.address;
+}
+
+function canSubmitDestination() {
+  if (activeRecipient()) return true;
+  return state.mode === "generated" && Boolean(connectedSolanaAddress());
+}
+
 function setMode(mode) {
   state.mode = mode === "existing" ? "existing" : "generated";
   ui.useGenerated?.classList.toggle("active", state.mode === "generated");
@@ -512,7 +535,17 @@ function renderQuote() {
       Number(quote.netUsd || 0) > 0 &&
       Number(quote.minimumTargetTokens || quote.estimatedTargetTokens || 0) > 0
   );
-  if (ui.requestBtn) ui.requestBtn.disabled = requestActive || gateLocked || !quote || !activeRecipient() || !hasReceiveValue;
+  if (ui.requestBtn) {
+    const destinationReady = canSubmitDestination();
+    ui.requestBtn.disabled = requestActive || gateLocked || !quote || !destinationReady || !hasReceiveValue;
+    ui.requestBtn.title = !quote
+      ? "Get a live quote first."
+      : !destinationReady
+      ? (state.mode === "existing" ? "Enter a valid Robinhood Chain receive wallet." : "Connect a Solana wallet first.")
+      : !hasReceiveValue
+      ? "Increase the PUMPR amount so the received token amount is above zero after fees and gas."
+      : "";
+  }
   if (ui.quoteBtn) ui.quoteBtn.disabled = Boolean(gateLocked);
   if (!quote) {
     if (ui.grossUsd) ui.grossUsd.textContent = "$0.00";
@@ -895,6 +928,10 @@ async function quoteSwap(options = {}) {
 }
 
 async function createSwapRequest() {
+  if (state.mode === "generated" && !activeRecipient()) {
+    const generated = ensureGeneratedDestination();
+    setAlert(ui.status, `Generated Robinhood receive wallet ${shortAddress(generated)}. Preparing swap...`);
+  }
   if (!state.quote) await quoteSwap({ requireRecipient: true });
   if (Number(state.quote?.netUsd || 0) <= 0 || Number(state.quote?.minimumTargetTokens || 0) <= 0) {
     throw new Error("Amount is too small after platform fee and Robinhood gas reserve. Increase the PUMPR amount before submitting.");
