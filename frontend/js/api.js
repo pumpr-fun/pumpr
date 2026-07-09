@@ -258,6 +258,21 @@ export const api = {
   rhSwapRequests: (wallet = "") => apiGet(`/api/rh-swap/requests?wallet=${encodeURIComponent(String(wallet || ""))}`),
   rhSwapRequestStatus: (id = "", wallet = "") =>
     apiGet(`/api/rh-swap/requests/${encodeURIComponent(String(id || ""))}?wallet=${encodeURIComponent(String(wallet || ""))}`),
+  rhBridgeQuote: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.solanaAddress) params.set("solanaAddress", String(options.solanaAddress));
+    if (options.recipient) params.set("recipient", String(options.recipient));
+    if (options.amountSol) params.set("amountSol", String(options.amountSol));
+    if (options.slippage) params.set("slippage", String(options.slippage));
+    return apiGet(`/api/rh-bridge/quote?${params.toString()}`);
+  },
+  rhBridgePrepare: (body = {}) => apiPost("/api/rh-bridge/prepare", body),
+  rhBridgeStatus: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.txHash) params.set("txHash", String(options.txHash));
+    if (options.bridge) params.set("bridge", String(options.bridge));
+    return apiGet(`/api/rh-bridge/status?${params.toString()}`);
+  },
   referralMe: (wallet, options = {}) => {
     const params = new URLSearchParams();
     if (options.refresh) params.set("refresh", "1");

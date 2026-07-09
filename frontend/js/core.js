@@ -721,23 +721,52 @@ function stringToHue(input = "") {
   return Math.abs(hash) % 360;
 }
 
+function escapeSvgText(value = "") {
+  return String(value || "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
 export function makeFallbackImage(name = "", symbol = "") {
-  const label = sanitizeTokenSymbol(symbol || name);
+  const label = escapeSvgText(sanitizeTokenSymbol(symbol || name));
   const seed = stringToHue(`${name}:${symbol}`);
-  const hue = 244 + (seed % 18);
-  const hue2 = 256 + (seed % 20);
+  const accent = 136 + (seed % 28);
+  const accent2 = 182 + (seed % 36);
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 400 400'>
     <defs>
-      <linearGradient id='g' x1='0' y1='0' x2='1' y2='1'>
-        <stop offset='0%' stop-color='hsl(${hue} 86% 74%)'/>
-        <stop offset='100%' stop-color='hsl(${hue2} 64% 56%)'/>
+      <linearGradient id='bg' x1='0' y1='0' x2='1' y2='1'>
+        <stop offset='0%' stop-color='#050908'/>
+        <stop offset='55%' stop-color='#0b1713'/>
+        <stop offset='100%' stop-color='#06110d'/>
       </linearGradient>
+      <linearGradient id='capsule' x1='0' y1='0' x2='1' y2='1'>
+        <stop offset='0%' stop-color='hsl(${accent2} 100% 56%)'/>
+        <stop offset='48%' stop-color='#76f7a8'/>
+        <stop offset='100%' stop-color='hsl(${accent} 94% 54%)'/>
+      </linearGradient>
+      <filter id='glow' x='-45%' y='-45%' width='190%' height='190%'>
+        <feGaussianBlur stdDeviation='7' result='blur'/>
+        <feColorMatrix in='blur' type='matrix' values='0 0 0 0 0.19 0 0 0 0 1 0 0 0 0 0.62 0 0 0 .72 0'/>
+        <feBlend in='SourceGraphic'/>
+      </filter>
     </defs>
-    <rect width='400' height='400' fill='#120b22'/>
-    <circle cx='320' cy='78' r='120' fill='url(#g)' opacity='0.84'/>
-    <circle cx='80' cy='340' r='145' fill='url(#g)' opacity='0.76'/>
-    <rect x='24' y='24' width='352' height='352' rx='36' fill='none' stroke='rgba(255,255,255,.28)' stroke-width='2'/>
-    <text x='200' y='222' text-anchor='middle' fill='white' font-family='Arial' font-size='66' font-weight='700'>${label}</text>
+    <rect width='400' height='400' fill='url(#bg)'/>
+    <path d='M0 248 C72 214 135 221 200 246 C272 273 332 270 400 238 L400 400 L0 400 Z' fill='#0f251c' opacity='.92'/>
+    <path d='M0 251 C72 214 136 224 200 248 C272 275 332 271 400 240' fill='none' stroke='#6ff3a4' stroke-width='4' opacity='.9'/>
+    <path d='M0 264 C74 240 140 240 205 258 C270 276 328 280 400 260' fill='none' stroke='#24d9ff' stroke-width='2' opacity='.55'/>
+    <g filter='url(#glow)' transform='translate(102 68) rotate(-22 98 98)'>
+      <rect x='32' y='18' width='132' height='212' rx='66' fill='url(#capsule)'/>
+      <path d='M76 18 h64 a66 66 0 0 1 66 66 v54 h-88 a66 66 0 0 1-66-66 v-30 a24 24 0 0 1 24-24z' fill='#f6fff8' opacity='.92'/>
+      <path d='M40 138 h82 a66 66 0 0 1 66 66 v26 h-74 a74 74 0 0 1-74-74z' fill='#07110d' opacity='.34'/>
+    </g>
+    <rect x='24' y='24' width='352' height='352' rx='34' fill='none' stroke='rgba(126,242,170,.42)' stroke-width='2'/>
+    <rect x='46' y='48' width='122' height='30' rx='15' fill='rgba(126,242,170,.15)' stroke='rgba(126,242,170,.48)'/>
+    <text x='107' y='69' text-anchor='middle' fill='#7df2aa' font-family='Arial, Helvetica, sans-serif' font-size='14' font-weight='800'>PUMP-R</text>
+    <text x='200' y='223' text-anchor='middle' fill='white' font-family='Arial, Helvetica, sans-serif' font-size='62' font-weight='900'>${label}</text>
+    <text x='200' y='258' text-anchor='middle' fill='#9feebb' font-family='Arial, Helvetica, sans-serif' font-size='18' font-weight='700'>launch preview</text>
   </svg>`;
 
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;

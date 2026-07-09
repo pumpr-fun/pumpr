@@ -904,6 +904,11 @@ function normalizeAddress(input) {
   }
 }
 
+function shortAddressText(value = "") {
+  const text = String(value || "").trim();
+  return text.length > 12 ? `${text.slice(0, 6)}...${text.slice(-4)}` : text;
+}
+
 function normalizeProfileAddress(input) {
   const text = String(input || "").trim();
   const evm = normalizeAddress(text);
@@ -4321,6 +4326,112 @@ function extractLifiQuoteAmounts(lifiQuote = {}) {
     toDecimals,
     tool: String(lifiQuote?.tool || ""),
     toolDetails: lifiQuote?.toolDetails || null
+  };
+}
+
+const LIFI_SOLANA_CHAIN_ID = "1151111081099710";
+const LIFI_SOLANA_NATIVE_TOKEN = "11111111111111111111111111111111";
+const LIFI_ROBINHOOD_CHAIN_ID = "4663";
+const LIFI_ROBINHOOD_NATIVE_TOKEN = "0x0000000000000000000000000000000000000000";
+
+function formatFixedAmount(value = 0, max = 8) {
+  const n = Number(value || 0);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  return n.toLocaleString(undefined, {
+    minimumFractionDigits: 0,
+    maximumFractionDigits: max
+  });
+}
+
+function normalizeLifiFees(lifiQuote = {}) {
+  const estimate = lifiQuote?.estimate || {};
+  const fees = [];
+  const addFee = (row = {}, type = "") => {
+    if (!row || typeof row !== "object") return;
+    const amountUsd = Number(row.amountUSD || row.amountUsd || row.usd || 0);
+    fees.push({
+      type: type || String(row.type || row.name || "fee"),
+      name: String(row.name || row.description || type || "Fee"),
+      amount: String(row.amount || row.amountRaw || ""),
+      amountUsd: Number.isFinite(amountUsd) ? amountUsd : 0,
+      token: row.token || null
+    });
+  };
+  for (const row of Array.isArray(estimate.feeCosts) ? estimate.feeCosts : []) addFee(row, "fee");
+  for (const row of Array.isArray(estimate.gasCosts) ? estimate.gasCosts : []) addFee(row, "gas");
+  return {
+    fees,
+    totalUsd: fees.reduce((sum, row) => sum + Number(row.amountUsd || 0), 0)
+  };
+}
+
+async function buildRobinhoodSolBridgeQuote(value = {}, { includeTransaction = false } = {}) {
+  const solanaAddress = String(value.solanaAddress || value.fromAddress || value.wallet || "").trim();
+  const recipient = normalizeAddress(value.recipient || value.toAddress || value.destination || "");
+  const amountSol = normalizeSwapAmount(value.amountSol || value.amount || value.sol || "");
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solanaAddress)) {
+    throw new Error("Connect Phantom/Solana wallet before bridging SOL to Robinhood Chain.");
+  }
+  if (!recipient) {
+    throw new Error("Enter a valid Robinhood Chain receive wallet.");
+  }
+  if (!Number.isFinite(amountSol) || amountSol <= 0) {
+    throw new Error("Enter a SOL amount to bridge.");
+  }
+  if (amountSol < 0.05) {
+    throw new Error("Bridge at least 0.05 SOL so Robinhood Chain ETH is not dust after route fees.");
+  }
+  const fromAmountRaw = parseUnitsFloor(amountSol, 9);
+  if (fromAmountRaw <= 0n) throw new Error("SOL amount is too small.");
+  const slippage = Math.max(0.001, Math.min(0.05, Number(value.slippage || rhSwapSlippageBps() / 10_000) || 0.005));
+  const quoteResult = await fetchLifiQuote({
+    fromChain: LIFI_SOLANA_CHAIN_ID,
+    toChain: LIFI_ROBINHOOD_CHAIN_ID,
+    fromToken: LIFI_SOLANA_NATIVE_TOKEN,
+    toToken: LIFI_ROBINHOOD_NATIVE_TOKEN,
+    fromAmount: fromAmountRaw.toString(),
+    fromAddress: solanaAddress,
+    toAddress: recipient,
+    slippage
+  });
+  const lifiQuote = quoteResult.quote || {};
+  const transactionBase64 = String(lifiQuote?.transactionRequest?.data || "").trim();
+  if (includeTransaction && !transactionBase64) {
+    throw new Error("LI.FI did not return a SOL bridge transaction for this route.");
+  }
+  const amounts = extractLifiQuoteAmounts(lifiQuote);
+  const fees = normalizeLifiFees(lifiQuote);
+  const tool = String(lifiQuote?.tool || amounts.tool || "");
+  const id = `rhbridge_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`;
+  return {
+    ok: true,
+    quoteId: id,
+    mode: "sol-to-robinhood-eth",
+    fromChain: "Solana",
+    toChain: "Robinhood Chain",
+    fromToken: "SOL",
+    toToken: "ETH",
+    amountSol,
+    amountSolText: formatFixedAmount(amountSol, 6),
+    fromAmountRaw: fromAmountRaw.toString(),
+    solanaAddress,
+    recipient,
+    estimatedRhEth: amounts.toAmount,
+    estimatedRhEthText: formatFixedAmount(amounts.toAmount, 8),
+    minimumRhEth: amounts.toAmountMin,
+    minimumRhEthText: formatFixedAmount(amounts.toAmountMin, 8),
+    toAmountRaw: amounts.toAmountRaw,
+    toAmountMinRaw: amounts.toAmountMinRaw,
+    fees,
+    tool,
+    toolDetails: amounts.toolDetails,
+    slippage,
+    transactionBase64: includeTransaction ? transactionBase64 : "",
+    lifiStatusParams: {
+      bridge: tool,
+      fromChain: LIFI_SOLANA_CHAIN_ID,
+      toChain: LIFI_ROBINHOOD_CHAIN_ID
+    }
   };
 }
 
@@ -10814,6 +10925,59 @@ app.get("/api/rh-swap/quote", async (req, res) => {
     res.json(quote);
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to quote Robinhood swap" });
+  }
+});
+
+app.get("/api/rh-bridge/quote", async (req, res) => {
+  try {
+    const quote = await buildRobinhoodSolBridgeQuote({
+      solanaAddress: req.query.solanaAddress || req.query.wallet || "",
+      recipient: req.query.recipient || req.query.toAddress || "",
+      amountSol: req.query.amountSol || req.query.amount || "",
+      slippage: req.query.slippage || ""
+    });
+    res.json(quote);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to quote SOL to Robinhood bridge" });
+  }
+});
+
+app.post("/api/rh-bridge/prepare", async (req, res) => {
+  try {
+    const quote = await buildRobinhoodSolBridgeQuote(req.body || {}, { includeTransaction: true });
+    res.json({
+      ...quote,
+      ok: true,
+      statusMessage: `Open Phantom to bridge ${quote.amountSolText} SOL to ${shortAddressText(quote.recipient)} on Robinhood Chain.`
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to prepare SOL to Robinhood bridge" });
+  }
+});
+
+app.get("/api/rh-bridge/status", async (req, res) => {
+  try {
+    const txHash = String(req.query.txHash || req.query.signature || "").trim();
+    if (!txHash) throw new Error("Bridge transaction signature is required.");
+    const bridge = String(req.query.bridge || req.query.tool || "").trim();
+    const status = await fetchLifiStatus({
+      bridge,
+      fromChain: LIFI_SOLANA_CHAIN_ID,
+      toChain: LIFI_ROBINHOOD_CHAIN_ID,
+      txHash
+    });
+    res.json({
+      ok: status.ok,
+      txHash,
+      bridge,
+      fromChain: "Solana",
+      toChain: "Robinhood Chain",
+      status: status.payload?.status || status.payload?.substatus || "",
+      payload: status.payload || null,
+      error: status.error || ""
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to check Robinhood bridge status" });
   }
 });
 
