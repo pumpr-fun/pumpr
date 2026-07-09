@@ -18,7 +18,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-    <link rel="stylesheet" href="/assets/site.css?v=20260706mobilepolish" />
+    <link rel="stylesheet" href="/assets/site.css?v=20260709rhselltosol" />
   </head>
   <body>
     <div class="app-shell">
@@ -400,6 +400,13 @@
                 <input id="sellEthInput" class="tokenpf-trade-input" type="number" min="0" step="0.00000001" placeholder="ETH amount" />
               </div>
               <button id="sellBtn" class="btn-danger" type="button">Sell</button>
+              <div id="sellForSolBox" class="tokenpf-sell-sol-box" hidden>
+                <div>
+                  <strong>Sell directly for SOL</strong>
+                  <span id="sellForSolQuote">Uses your RH wallet and sends SOL to your connected Solana wallet.</span>
+                </div>
+                <button id="sellForSolBtn" class="btn-ghost" type="button">Sell for SOL</button>
+              </div>
               <p class="tokenpf-turbo-row">⚙ 2% · Turbo</p>
             </article>
 
@@ -523,7 +530,7 @@
 
     <script src="/js/sidebar.js?v=20260705cardwaitlist"></script>
     <script src="https://unpkg.com/lightweight-charts@4.2.0/dist/lightweight-charts.standalone.production.js"></script>
-    <script type="module" src="/js/token.js?v=20260703profileconsistency"></script>
+    <script type="module" src="/js/token.js?v=20260709rhselltosol"></script>
   </body>
 </html>
 

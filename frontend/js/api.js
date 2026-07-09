@@ -273,6 +273,23 @@ export const api = {
     if (options.bridge) params.set("bridge", String(options.bridge));
     return apiGet(`/api/rh-bridge/status?${params.toString()}`);
   },
+  rhSellSolQuote: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.fromAddress) params.set("fromAddress", String(options.fromAddress));
+    if (options.solanaAddress) params.set("solanaAddress", String(options.solanaAddress));
+    if (options.tokenAddress) params.set("tokenAddress", String(options.tokenAddress));
+    if (options.amountTokens) params.set("amountTokens", String(options.amountTokens));
+    if (options.tokenDecimals) params.set("tokenDecimals", String(options.tokenDecimals));
+    if (options.slippage) params.set("slippage", String(options.slippage));
+    return apiGet(`/api/rh-sell-sol/quote?${params.toString()}`);
+  },
+  rhSellSolPrepare: (body = {}) => apiPost("/api/rh-sell-sol/prepare", body),
+  rhSellSolStatus: (options = {}) => {
+    const params = new URLSearchParams();
+    if (options.txHash) params.set("txHash", String(options.txHash));
+    if (options.bridge) params.set("bridge", String(options.bridge));
+    return apiGet(`/api/rh-sell-sol/status?${params.toString()}`);
+  },
   referralMe: (wallet, options = {}) => {
     const params = new URLSearchParams();
     if (options.refresh) params.set("refresh", "1");

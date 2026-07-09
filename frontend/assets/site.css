@@ -6155,6 +6155,61 @@ button:disabled {
   font-size: 0.92rem;
 }
 
+.tokenpf-sell-sol-box {
+  border: 1px solid rgba(77, 255, 163, 0.22);
+  border-radius: 12px;
+  background:
+    radial-gradient(circle at top right, rgba(77, 255, 163, 0.12), transparent 40%),
+    rgba(9, 17, 16, 0.76);
+  padding: 0.65rem;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.65rem;
+  align-items: center;
+}
+
+.tokenpf-sell-sol-box[hidden] {
+  display: none;
+}
+
+.tokenpf-sell-sol-box strong,
+.tokenpf-sell-sol-box span {
+  display: block;
+  min-width: 0;
+}
+
+.tokenpf-sell-sol-box strong {
+  color: #ffffff;
+  font-size: 0.86rem;
+}
+
+.tokenpf-sell-sol-box span {
+  color: #9fb0ca;
+  font-size: 0.74rem;
+  line-height: 1.35;
+  margin-top: 0.12rem;
+}
+
+.tokenpf-sell-sol-box span.error {
+  color: #ff7e94;
+}
+
+.tokenpf-sell-sol-box a {
+  color: #89f3c2;
+  text-decoration: none;
+}
+
+.tokenpf-sell-sol-box a:hover {
+  color: #ffffff;
+}
+
+.tokenpf-sell-sol-box .btn-ghost {
+  width: auto;
+  min-height: 36px;
+  padding: 0.52rem 0.72rem;
+  white-space: nowrap;
+}
+
 .tokenpf-side-card {
   display: grid;
   gap: 0.5rem;

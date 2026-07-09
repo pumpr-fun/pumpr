@@ -1,6 +1,7 @@
-import { api } from "./api.js?v=20260703sharedauth";
+import { api } from "./api.js?v=20260709rhselltosol";
 import {
   TOKEN_ABI,
+  connectSolanaWallet,
   defaultUsername,
   disconnectWallet,
   ethToUsd,
@@ -23,6 +24,7 @@ import {
   sendTxWithFallback,
   setPreferredChainId,
   shortAddress,
+  solanaWalletState,
   walletState
 } from "./core.js?v=20260706mobileauth";
 import { initLanguageSelector, initWalletControls, initWalletHubMenu, setAlert, setWalletLabel, showCopyToast } from "./ui.js?v=20260706mobileauth";
@@ -88,6 +90,9 @@ const ui = {
   sellInput: document.getElementById("sellInput"),
   sellEthInput: document.getElementById("sellEthInput"),
   sellBtn: document.getElementById("sellBtn"),
+  sellForSolBox: document.getElementById("sellForSolBox"),
+  sellForSolBtn: document.getElementById("sellForSolBtn"),
+  sellForSolQuote: document.getElementById("sellForSolQuote"),
   buyFields: document.getElementById("buyFields"),
   sellFields: document.getElementById("sellFields"),
   buyTabBtn: document.getElementById("buyTabBtn"),
@@ -185,6 +190,8 @@ const state = {
   gecko: null,
   dex: null,
   ethUsd: 3000,
+  rpcUrl: "",
+  rpcUrls: [],
   isBuyTab: true,
   pendingProfileImageUri: "",
   activeChartEmbedUrl: "",
@@ -194,12 +201,19 @@ const state = {
   pairMeta: null,
   community: null,
   fullRefreshInFlight: false,
-  lastFullRefreshAt: 0
+  lastFullRefreshAt: 0,
+  rhSellSol: {
+    quote: null,
+    timer: null,
+    statusTimer: null,
+    inFlight: false
+  }
 };
 let walletHub = null;
 let walletControls = null;
 
 const ZERO_ADDRESS = "0x0000000000000000000000000000000000000000";
+const RH_WALLET_STORE_KEY = "pumpr.robinhood.wallets.v1";
 const GECKO_NETWORK_BY_CHAIN = {
   1: "eth",
   4663: "robinhood-chain",
@@ -307,6 +321,238 @@ function normalizeAddress(value) {
   } catch {
     return "";
   }
+}
+
+function isRobinhoodTokenPage() {
+  const hintedChainId = Number(new URLSearchParams(window.location.search).get("chainId") || 0);
+  return Number(state.launch?.chainId || state.chainId || hintedChainId || 0) === 4663;
+}
+
+function readRhWalletStore() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(RH_WALLET_STORE_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed) ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function attachedRhWalletForSolana(solanaAddress = "") {
+  const key = String(solanaAddress || solanaWalletState()?.address || "").trim();
+  if (!key) return null;
+  const row = readRhWalletStore()[key];
+  return row?.type === "generated" && normalizeAddress(row.address) && row.privateKey ? row : null;
+}
+
+function currentRhSellSource(solanaAddress = "") {
+  const attached = attachedRhWalletForSolana(solanaAddress);
+  if (attached?.address && attached?.privateKey) return { type: "generated", address: normalizeAddress(attached.address), privateKey: attached.privateKey };
+  const ws = walletState();
+  const evm = normalizeAddress(ws.address || "");
+  if (evm) return { type: "connected", address: evm, signer: ws.signer || null };
+  return null;
+}
+
+function rhExplorerTxUrl(txHash = "") {
+  const tx = String(txHash || "").trim();
+  return /^0x[a-fA-F0-9]{64}$/.test(tx) ? `https://robinhoodchain.blockscout.com/tx/${tx}` : "";
+}
+
+function normalizeEvmTxRequest(request = {}, fallbackFrom = "") {
+  const tx = {
+    to: normalizeAddress(request.to || ""),
+    data: String(request.data || "0x"),
+    value: request.value ? BigInt(String(request.value)) : 0n
+  };
+  const from = normalizeAddress(request.from || fallbackFrom || "");
+  if (from) tx.from = from;
+  if (request.gasLimit || request.gas) tx.gasLimit = BigInt(String(request.gasLimit || request.gas));
+  if (request.gasPrice) tx.gasPrice = BigInt(String(request.gasPrice));
+  if (request.maxFeePerGas) tx.maxFeePerGas = BigInt(String(request.maxFeePerGas));
+  if (request.maxPriorityFeePerGas) tx.maxPriorityFeePerGas = BigInt(String(request.maxPriorityFeePerGas));
+  if (request.chainId) tx.chainId = Number(request.chainId);
+  if (!tx.to) throw new Error("Route transaction is missing a destination contract.");
+  return tx;
+}
+
+function setSellForSolStatus(message = "", error = false) {
+  if (!ui.sellForSolQuote) return;
+  ui.sellForSolQuote.textContent = message || "Uses your RH wallet and sends SOL to your connected Solana wallet.";
+  ui.sellForSolQuote.classList.toggle("error", Boolean(error));
+}
+
+function setSellForSolBusy(active, label = "") {
+  state.rhSellSol.inFlight = Boolean(active);
+  if (!ui.sellForSolBtn) return;
+  ui.sellForSolBtn.disabled = Boolean(active);
+  ui.sellForSolBtn.textContent = active ? (label || "Routing...") : "Sell for SOL";
+}
+
+function showSellForSolBox() {
+  if (!ui.sellForSolBox) return;
+  const show = isRobinhoodTokenPage() && !state.isBuyTab;
+  ui.sellForSolBox.hidden = !show;
+}
+
+function setSellForSolStatusHtml(html = "", error = false) {
+  if (!ui.sellForSolQuote) return;
+  ui.sellForSolQuote.innerHTML = html || "Uses your RH wallet and sends SOL to your connected Solana wallet.";
+  ui.sellForSolQuote.classList.toggle("error", Boolean(error));
+}
+
+function clearRhSellSolTimer() {
+  if (state.rhSellSol.timer) {
+    clearTimeout(state.rhSellSol.timer);
+    state.rhSellSol.timer = null;
+  }
+}
+
+async function quoteSellForSol({ silent = false } = {}) {
+  if (!isRobinhoodTokenPage() || state.isBuyTab) return null;
+  const raw = String(ui.sellInput?.value || "").trim();
+  if (!raw) {
+    state.rhSellSol.quote = null;
+    if (!state.rhSellSol.inFlight) setSellForSolStatus("Uses your RH wallet and sends SOL to your connected Solana wallet.");
+    return null;
+  }
+  const solState = solanaWalletState();
+  const source = currentRhSellSource(solState.address || "");
+  if (!source?.address) {
+    if (!silent) setSellForSolStatus("Connect the Robinhood wallet that holds this token, or use the attached RH wallet from your Solana profile.", true);
+    return null;
+  }
+  if (!solState?.address) {
+    if (!silent) setSellForSolStatus("Connect Phantom so Pump-r knows where to send the SOL.", true);
+    return null;
+  }
+  const amountTokens = toPositiveNumber(raw);
+  if (!amountTokens) return null;
+  try {
+    const quote = await api.rhSellSolQuote({
+      fromAddress: source.address,
+      solanaAddress: solState.address,
+      tokenAddress: state.launch?.token || "",
+      amountTokens,
+      tokenDecimals: 18
+    });
+    state.rhSellSol.quote = quote;
+    if (!state.rhSellSol.inFlight) {
+      setSellForSolStatus(
+        `Route ready: ~${formatTradeNumber(quote.estimatedSol, 6)} SOL to ${shortAddress(solState.address)} after LI.FI route fees.`
+      );
+    }
+    return quote;
+  } catch (error) {
+    state.rhSellSol.quote = null;
+    if (!silent) setSellForSolStatus(parseUiError(error), true);
+    return null;
+  }
+}
+
+function scheduleSellForSolQuote() {
+  clearRhSellSolTimer();
+  state.rhSellSol.timer = setTimeout(() => {
+    quoteSellForSol({ silent: true }).catch(() => {});
+  }, 500);
+}
+
+async function pollSellForSolStatus(txHash = "", bridge = "", attempt = 0) {
+  if (!txHash || attempt > 18) {
+    setSellForSolBusy(false);
+    return;
+  }
+  try {
+    const status = await api.rhSellSolStatus({ txHash, bridge });
+    const raw = String(status?.status || status?.payload?.status || status?.payload?.substatus || "").toUpperCase();
+    const rhUrl = rhExplorerTxUrl(txHash);
+    const linkHtml = rhUrl ? ` <a href="${rhUrl}" target="_blank" rel="noopener noreferrer">Robinhood tx</a>` : "";
+    if (["DONE", "COMPLETED", "SUCCESS", "FINISHED"].includes(raw)) {
+      setSellForSolBusy(false);
+      setSellForSolStatusHtml(`SOL route completed.${linkHtml}`);
+      setAlert(ui.alert, "Robinhood token sold and routed to SOL.");
+      return;
+    }
+    if (["FAILED", "INVALID", "NOT_FOUND"].includes(raw)) {
+      setSellForSolBusy(false);
+      setSellForSolStatusHtml(`Route needs attention: ${raw}.${linkHtml}`, true);
+      setAlert(ui.alert, `Robinhood -> SOL route returned ${raw}.`, true);
+      return;
+    }
+    setSellForSolStatusHtml(`Route submitted${raw ? ` (${raw})` : ""}. Waiting for SOL delivery.${linkHtml}`);
+  } catch {
+    setSellForSolStatus("Route submitted. Waiting for SOL delivery...");
+  }
+  clearTimeout(state.rhSellSol.statusTimer);
+  state.rhSellSol.statusTimer = setTimeout(() => {
+    pollSellForSolStatus(txHash, bridge, attempt + 1).catch(() => {});
+  }, attempt < 6 ? 3500 : 7000);
+}
+
+async function submitSellForSol() {
+  if (!isRobinhoodTokenPage()) throw new Error("This route is only available for Robinhood Chain tokens.");
+  const solana = await connectSolanaWallet();
+  const source = currentRhSellSource(solana.publicKey || "");
+  if (!source?.address) throw new Error("Connect the Robinhood wallet that holds this token, or use the attached RH wallet generated from this Solana profile.");
+  const amountTokens = toPositiveNumber(ui.sellInput?.value);
+  if (!amountTokens) throw new Error("Enter token amount to sell for SOL.");
+
+  setSellForSolBusy(true, "Preparing...");
+  setSellForSolStatus("Preparing Robinhood -> SOL route...");
+  const prepared = await api.rhSellSolPrepare({
+    fromAddress: source.address,
+    solanaAddress: solana.publicKey,
+    tokenAddress: state.launch?.token || "",
+    amountTokens,
+    tokenDecimals: 18
+  });
+  state.rhSellSol.quote = prepared;
+
+  const rpcUrl = String(state.rpcUrl || state.rpcUrls?.[0] || "").trim();
+  if (!rpcUrl) throw new Error("Robinhood Chain RPC is not configured.");
+  const provider = new ethers.JsonRpcProvider(rpcUrl, 4663);
+  let signer = null;
+  if (source.type === "generated" && source.privateKey) {
+    signer = new ethers.Wallet(source.privateKey, provider);
+  } else {
+    const ws = walletState();
+    signer = ws.signer || null;
+  }
+  if (!signer) throw new Error("Robinhood wallet signer is not available.");
+
+  const quote = prepared;
+  const token = new ethers.Contract(state.launch.token, TOKEN_ABI, signer);
+  const approvalAddress = normalizeAddress(quote.approvalAddress || quote.transactionRequest?.to || "");
+  const amountRaw = BigInt(String(quote.fromAmountRaw || "0"));
+  if (amountRaw <= 0n) throw new Error("Route amount is too small.");
+  const balanceRaw = await token.balanceOf(source.address);
+  if (BigInt(balanceRaw || 0n) < amountRaw) {
+    throw new Error(`This Robinhood wallet does not hold enough ${state.launch?.symbol || "token"} to route that amount to SOL.`);
+  }
+  if (approvalAddress) {
+    const allowance = await token.allowance(source.address, approvalAddress);
+    if (allowance < amountRaw) {
+      setSellForSolBusy(true, "Approving...");
+      setSellForSolStatus(`Approving ${shortAddress(approvalAddress)} to route your RH token...`);
+      const approvalTx = await token.approve(approvalAddress, ethers.MaxUint256);
+      await approvalTx.wait();
+    }
+  }
+
+  const txRequest = normalizeEvmTxRequest(quote.transactionRequest || {}, source.address);
+  setSellForSolBusy(true, "Routing...");
+  setSellForSolStatus("Broadcasting Robinhood -> SOL route...");
+  const sent = await signer.sendTransaction(txRequest);
+  const receipt = await sent.wait();
+  const txHash = String(receipt?.hash || sent?.hash || "").trim();
+  if (!txHash) throw new Error("Route transaction hash was not returned.");
+
+  const rhUrl = rhExplorerTxUrl(txHash);
+  const links = [rhUrl ? `<a href="${rhUrl}" target="_blank" rel="noopener noreferrer">Robinhood tx</a>` : ""].filter(Boolean);
+  setSellForSolStatusHtml(`Route submitted. ${links.join(" · ") || "Waiting for SOL delivery."}`);
+  setAlert(ui.alert, `Robinhood token route sent from ${shortAddress(source.address)} to ${shortAddress(solana.publicKey)}.`);
+  pollSellForSolStatus(txHash, quote.tool || "").catch(() => {
+    setSellForSolBusy(false);
+  });
 }
 
 function profileHrefForAddress(value) {
@@ -1880,6 +2126,7 @@ function setTradeTab(isBuy) {
     ui.sellFields.style.display = isBuy ? "none" : "grid";
     ui.sellBtn.style.display = isBuy ? "none" : "block";
   }
+  if (!isBuy) scheduleSellForSolQuote();
   renderTradePanel();
 }
 
@@ -1944,6 +2191,7 @@ function renderTradePanel() {
     if (ui.tradeReceiveLine) ui.tradeReceiveLine.textContent = `You receive � ${formatTradeNumber(sellEth, 6)} ${qSymbol}`;
     if (ui.sellBtn) ui.sellBtn.textContent = sellToken > 0 ? `Sell ${formatTradeNumber(sellToken, 4)} ${symbol}` : "Enter amount to sell";
   }
+  showSellForSolBox();
 }
 
 function setupChartControls() {
@@ -1987,12 +2235,23 @@ function setupInteractions() {
 
   ui.sellInput?.addEventListener("input", () => {
     queueTradeSync("sellFromToken", syncSellEthFromToken);
+    scheduleSellForSolQuote();
     renderTradePanel();
   });
 
   ui.sellEthInput?.addEventListener("input", () => {
     queueTradeSync("sellFromEth", syncSellTokenFromEth);
     renderTradePanel();
+  });
+
+  ui.sellForSolBtn?.addEventListener("click", async () => {
+    try {
+      await submitSellForSol();
+    } catch (error) {
+      setSellForSolBusy(false);
+      setSellForSolStatus(parseUiError(error), true);
+      setAlert(ui.alert, parseUiError(error), true);
+    }
   });
 
   ui.quickEthButtons.forEach((btn) => {
@@ -2279,6 +2538,11 @@ async function loadTokenPage(forceFresh = false, lite = false) {
   const previousTrades = Array.isArray(state.trades) ? state.trades : [];
   const previousSeries = Array.isArray(state.allSeries) ? state.allSeries : [];
   state.launch = payload.launch;
+  if (Number.isFinite(Number(payload?.launch?.chainId)) && Number(payload.launch.chainId) > 0) {
+    state.chainId = Number(payload.launch.chainId);
+    setPreferredChainId(state.chainId);
+    if (ui.netChip) ui.netChip.textContent = `Chain ${state.chainId}`;
+  }
   const incomingTrades = Array.isArray(payload.trades) ? payload.trades : [];
   const shouldReplaceTrades = Boolean(forceFresh && incomingTrades.length) || !lite || incomingTrades.length || !previousTrades.length;
   if (shouldReplaceTrades) {
@@ -2784,12 +3048,16 @@ async function init() {
     state.quoteMode = String(cfg.quoteMode || state.quoteMode || "native").toLowerCase() === "usdc" ? "usdc" : "native";
     setPreferredChainId(state.chainId);
     state.explorerBaseUrl = cfg.explorerBaseUrl || "";
+    state.rpcUrl = String(cfg.rpcUrl || "").trim();
+    state.rpcUrls = Array.isArray(cfg.rpcUrls) ? cfg.rpcUrls : [];
     if (ui.netChip) ui.netChip.textContent = `Chain ${cfg.chainId}`;
     if (ui.factoryChip) ui.factoryChip.textContent = shortAddress(cfg.factoryAddress);
   } catch {
     state.chainId = 1;
     setPreferredChainId(1);
     state.explorerBaseUrl = "";
+    state.rpcUrl = "";
+    state.rpcUrls = [];
   }
 
   try {
@@ -2835,6 +3103,7 @@ async function init() {
         setProfileMenuOpen(false);
         await walletHub?.refresh();
         await refreshWalletBalance();
+        scheduleSellForSolQuote();
       }
     });
   } catch (err) {
@@ -2850,17 +3119,20 @@ async function init() {
     refreshWalletBalance().catch(() => {
       // noop
     });
+    setSellForSolStatus("Uses your RH wallet and sends SOL to your connected Solana wallet.");
   });
   ui.connectBtn?.addEventListener("click", () => {
     setTimeout(() => {
       updateProfileIdentity();
       walletHub?.refresh();
+      scheduleSellForSolQuote();
     }, 20);
   });
   ui.walletSelect?.addEventListener("change", () => {
     setTimeout(() => {
       updateProfileIdentity();
       walletHub?.refresh();
+      scheduleSellForSolQuote();
     }, 20);
   });
 

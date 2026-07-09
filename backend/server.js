@@ -4435,6 +4435,74 @@ async function buildRobinhoodSolBridgeQuote(value = {}, { includeTransaction = f
   };
 }
 
+async function buildRobinhoodTokenToSolQuote(value = {}, { includeTransaction = false } = {}) {
+  const fromAddress = normalizeAddress(value.fromAddress || value.wallet || "");
+  const solanaAddress = String(value.solanaAddress || value.recipient || value.toAddress || "").trim();
+  const tokenAddress = normalizeAddress(value.tokenAddress || value.token || value.fromToken || "");
+  const amountTokens = normalizeSwapAmount(value.amountTokens || value.amount || "");
+  const tokenDecimals = Math.max(0, Math.min(36, Number(value.tokenDecimals || 18) || 18));
+  if (!fromAddress) throw new Error("Connect or select the Robinhood Chain wallet that holds this token.");
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(solanaAddress)) {
+    throw new Error("Connect a Solana wallet to receive SOL.");
+  }
+  if (!tokenAddress) throw new Error("Valid Robinhood Chain token contract is required.");
+  if (!Number.isFinite(amountTokens) || amountTokens <= 0) throw new Error("Enter a token amount to sell for SOL.");
+  const fromAmountRaw = parseUnitsFloor(amountTokens, tokenDecimals);
+  if (fromAmountRaw <= 0n) throw new Error("Token amount is too small.");
+  const slippage = Math.max(0.001, Math.min(0.05, Number(value.slippage || rhSwapSlippageBps() / 10_000) || 0.01));
+  const quoteResult = await fetchLifiQuote({
+    fromChain: LIFI_ROBINHOOD_CHAIN_ID,
+    toChain: LIFI_SOLANA_CHAIN_ID,
+    fromToken: tokenAddress,
+    toToken: LIFI_SOLANA_NATIVE_TOKEN,
+    fromAmount: fromAmountRaw.toString(),
+    fromAddress,
+    toAddress: solanaAddress,
+    slippage
+  });
+  const lifiQuote = quoteResult.quote || {};
+  const amounts = extractLifiQuoteAmounts(lifiQuote);
+  const fees = normalizeLifiFees(lifiQuote);
+  const txReq = lifiQuote?.transactionRequest || null;
+  const approvalAddress = normalizeAddress(lifiQuote?.estimate?.approvalAddress || lifiQuote?.approvalAddress || "");
+  if (includeTransaction && (!txReq || !txReq.to || !txReq.data)) {
+    throw new Error("LI.FI did not return a Robinhood Chain sell transaction for this route.");
+  }
+  const id = `rhsellsol_${Date.now().toString(36)}_${crypto.randomBytes(4).toString("hex")}`;
+  return {
+    ok: true,
+    quoteId: id,
+    mode: "robinhood-token-to-sol",
+    fromChain: "Robinhood Chain",
+    toChain: "Solana",
+    fromToken: tokenAddress,
+    toToken: "SOL",
+    fromAddress,
+    solanaAddress,
+    amountTokens,
+    amountTokensText: formatFixedAmount(amountTokens, 6),
+    fromAmountRaw: fromAmountRaw.toString(),
+    tokenDecimals,
+    estimatedSol: amounts.toAmount,
+    estimatedSolText: formatFixedAmount(amounts.toAmount, 8),
+    minimumSol: amounts.toAmountMin,
+    minimumSolText: formatFixedAmount(amounts.toAmountMin, 8),
+    toAmountRaw: amounts.toAmountRaw,
+    toAmountMinRaw: amounts.toAmountMinRaw,
+    fees,
+    approvalAddress,
+    tool: String(lifiQuote?.tool || amounts.tool || ""),
+    toolDetails: amounts.toolDetails,
+    slippage,
+    transactionRequest: includeTransaction ? txReq : null,
+    lifiStatusParams: {
+      bridge: String(lifiQuote?.tool || amounts.tool || ""),
+      fromChain: LIFI_ROBINHOOD_CHAIN_ID,
+      toChain: LIFI_SOLANA_CHAIN_ID
+    }
+  };
+}
+
 function normalizeSwapAmount(value = "") {
   const amount = Number(String(value || "").replace(/,/g, "").trim());
   return Number.isFinite(amount) && amount > 0 ? amount : 0;
@@ -10978,6 +11046,61 @@ app.get("/api/rh-bridge/status", async (req, res) => {
     });
   } catch (error) {
     res.status(400).json({ error: error.message || "Failed to check Robinhood bridge status" });
+  }
+});
+
+app.get("/api/rh-sell-sol/quote", async (req, res) => {
+  try {
+    const quote = await buildRobinhoodTokenToSolQuote({
+      fromAddress: req.query.fromAddress || req.query.wallet || "",
+      solanaAddress: req.query.solanaAddress || req.query.recipient || "",
+      tokenAddress: req.query.tokenAddress || req.query.token || "",
+      amountTokens: req.query.amountTokens || req.query.amount || "",
+      tokenDecimals: req.query.tokenDecimals || "18",
+      slippage: req.query.slippage || ""
+    });
+    res.json(quote);
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to quote Robinhood token to SOL" });
+  }
+});
+
+app.post("/api/rh-sell-sol/prepare", async (req, res) => {
+  try {
+    const quote = await buildRobinhoodTokenToSolQuote(req.body || {}, { includeTransaction: true });
+    res.json({
+      ...quote,
+      ok: true,
+      statusMessage: `Open your Robinhood Chain wallet to sell ${quote.amountTokensText} tokens for SOL.`
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to prepare Robinhood token to SOL route" });
+  }
+});
+
+app.get("/api/rh-sell-sol/status", async (req, res) => {
+  try {
+    const txHash = String(req.query.txHash || req.query.signature || "").trim();
+    if (!txHash) throw new Error("Route transaction hash is required.");
+    const bridge = String(req.query.bridge || req.query.tool || "").trim();
+    const status = await fetchLifiStatus({
+      bridge,
+      fromChain: LIFI_ROBINHOOD_CHAIN_ID,
+      toChain: LIFI_SOLANA_CHAIN_ID,
+      txHash
+    });
+    res.json({
+      ok: status.ok,
+      txHash,
+      bridge,
+      fromChain: "Robinhood Chain",
+      toChain: "Solana",
+      status: status.payload?.status || status.payload?.substatus || "",
+      payload: status.payload || null,
+      error: status.error || ""
+    });
+  } catch (error) {
+    res.status(400).json({ error: error.message || "Failed to check Robinhood token to SOL route" });
   }
 });
 
