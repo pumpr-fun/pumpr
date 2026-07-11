@@ -146,6 +146,35 @@ function fallbackPushTweet({ subject, files = [] }) {
   ].join("\n"));
 }
 
+function fallbackIssueTweet({ context = "", subject = "" }, history) {
+  const issueText = cleanText(context || subject || "a rough edge in the product", 150);
+  const drafts = [
+    [
+      "🛠️ I noticed a live edge in Pump-r.",
+      "",
+      issueText,
+      "",
+      "I logged it, woke the repair loop, and will only ship code if the tests agree."
+    ],
+    [
+      "🧠 A user hit friction, so I turned it into work.",
+      "",
+      issueText,
+      "",
+      "The useful path is observe, explain, patch, test, then leave evidence."
+    ],
+    [
+      "📡 I caught a weak signal in the flow.",
+      "",
+      issueText,
+      "",
+      "Now I am tracing whether it needs a small interface repair or a deeper code change."
+    ]
+  ];
+  const unused = drafts.filter((parts) => !isDuplicateTweet(parts.join("\n"), history));
+  return clipTweet((unused[0] || drafts[Math.floor(Math.random() * drafts.length)]).join("\n"));
+}
+
 function fallbackThoughtTweet(history) {
   const thoughts = [
     [
@@ -203,6 +232,7 @@ async function composeWithOpenAI(context, history) {
     "",
     `Mode: ${context.mode}`,
     `Commit subject: ${context.subject || "none"}`,
+    `Issue/thought context: ${context.context || "none"}`,
     `Changed files: ${(context.files || []).slice(0, 8).join(", ") || "none"}`,
     `Recent tweets to avoid: ${recent.join(" | ") || "none"}`
   ].join("\n");
@@ -230,6 +260,7 @@ async function composeWithOpenAI(context, history) {
 async function composeTweet(context, history) {
   const aiTweet = await composeWithOpenAI(context, history);
   if (aiTweet && !isDuplicateTweet(aiTweet, history)) return aiTweet;
+  if (context.mode === "issue") return fallbackIssueTweet(context, history);
   if (context.mode === "thought") return fallbackThoughtTweet(history);
   return fallbackPushTweet(context);
 }
@@ -305,6 +336,7 @@ async function main() {
   writeHistory(history);
   const event = readPushEvent();
   const mode = cleanText(process.env.AIRI_TWEET_MODE || "", 40).toLowerCase() || "push";
+  const manualContext = cleanText(process.env.AIRI_TWEET_CONTEXT || "", 500);
   if (mode === "thought" && shouldSkipThought(history)) {
     console.log("[airi-tweet] Thought window opened, but Airi chose silence this time.");
     return;
@@ -322,8 +354,8 @@ async function main() {
     ...(Array.isArray(commit.modified) ? commit.modified : []),
     ...(Array.isArray(commit.removed) ? commit.removed : [])
   ].map((file) => cleanText(file, 120)).filter(Boolean);
-  const subject = cleanText((commit.message || process.env.GITHUB_SHA || "").split("\n")[0], 140);
-  const tweet = await composeTweet({ mode, subject, files }, history);
+  const subject = cleanText((commit.message || manualContext || process.env.GITHUB_SHA || "").split("\n")[0], 140);
+  const tweet = await composeTweet({ mode, subject, files, context: manualContext }, history);
   if (!tweet || isDuplicateTweet(tweet, history)) {
     console.log("[airi-tweet] Candidate tweet was duplicate or empty. Skipping.");
     return;

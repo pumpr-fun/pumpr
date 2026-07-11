@@ -13298,6 +13298,7 @@ async function fetchAiriGitHubCommits(branch = "main") {
 }
 
 const airiCoderDispatchCooldown = new Map();
+const airiTweetDispatchCooldown = new Map();
 
 function airiIssueDispatchKey(issue = {}) {
   return [
@@ -13338,6 +13339,46 @@ async function dispatchAiriCoderForIssue(issue = {}) {
         }
       })
     }), 3500, "Airi coder dispatch");
+    if (response.status === 204) return { ok: true, workflow, ref };
+    const text = await response.text().catch(() => "");
+    return { skipped: true, reason: `github_${response.status}`, detail: sanitizeAiriText(text, 240) };
+  } catch (error) {
+    return { skipped: true, reason: "dispatch_failed", detail: sanitizeAiriText(error?.message || error, 180) };
+  }
+}
+
+async function dispatchAiriTweetForIssue(issue = {}) {
+  const token = String(process.env.AIRI_GITHUB_TOKEN || process.env.GITHUB_TOKEN || "").trim();
+  if (!token) return { skipped: true, reason: "missing_github_token" };
+  const repo = sanitizeAiriText(process.env.AIRI_GITHUB_REPO || "pumpr-fun/pumpr", 120);
+  if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repo)) return { skipped: true, reason: "invalid_repo" };
+  const workflow = sanitizeAiriText(process.env.AIRI_TWEET_WORKFLOW || "airi-tweet-on-push.yml", 120);
+  const ref = sanitizeAiriText(process.env.AIRI_TWEET_REF || "main", 80);
+  const key = airiIssueDispatchKey(issue);
+  const now = Date.now();
+  const cooldownMs = Math.max(30_000, Number(process.env.AIRI_TWEET_DISPATCH_COOLDOWN_MS || 90_000));
+  const last = Number(airiTweetDispatchCooldown.get(key) || 0);
+  if (last && now - last < cooldownMs) return { skipped: true, reason: "cooldown" };
+  airiTweetDispatchCooldown.set(key, now);
+  const context = sanitizeAiriText(`${issue.kind || "issue"} on ${issue.page || issue.pathname || "app"}: ${issue.summary || ""}`, 500);
+  const url = `https://api.github.com/repos/${repo}/actions/workflows/${encodeURIComponent(workflow)}/dispatches`;
+  try {
+    const response = await withTimeout(fetch(url, {
+      method: "POST",
+      headers: {
+        Accept: "application/vnd.github+json",
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+        "User-Agent": "PumpR-Airi-Tweet-Dispatch/1.0"
+      },
+      body: JSON.stringify({
+        ref,
+        inputs: {
+          mode: "issue",
+          context
+        }
+      })
+    }), 3500, "Airi tweet dispatch");
     if (response.status === 204) return { ok: true, workflow, ref };
     const text = await response.text().catch(() => "");
     return { skipped: true, reason: `github_${response.status}`, detail: sanitizeAiriText(text, 240) };
@@ -13561,7 +13602,10 @@ app.post("/api/airi/issue", async (req, res) => {
       importance: String(issue.severity || "").toLowerCase() === "error" ? 8 : 6
     });
     const saved = saveAiriSession(store, session);
-    const coderDispatch = await dispatchAiriCoderForIssue(issue);
+    const [coderDispatch, tweetDispatch] = await Promise.all([
+      dispatchAiriCoderForIssue(issue),
+      dispatchAiriTweetForIssue(issue)
+    ]);
     res.json({
       ok: true,
       sessionId: saved.sessionId,
@@ -13569,7 +13613,8 @@ app.post("/api/airi/issue", async (req, res) => {
       publicMessage: airiIssuePublicMessage(issue),
       reply: airiIssuePublicMessage(issue),
       issueCount: listAiriIssues(store, 100).length,
-      coderDispatch
+      coderDispatch,
+      tweetDispatch
     });
   } catch (error) {
     res.status(500).json({ ok: false, error: error.message || "Failed to record Airi issue" });

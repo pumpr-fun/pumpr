@@ -11,8 +11,11 @@ on:
         options:
           - thought
           - push
-  schedule:
-    - cron: "17 */3 * * *"
+          - issue
+      context:
+        description: "Extra issue/thought context for Airi"
+        required: false
+        default: ""
   push:
     branches:
       - main
@@ -30,7 +33,8 @@ jobs:
     env:
       AIRI_TWEET_ENABLED: ${{ vars.AIRI_TWEET_ENABLED || 'true' }}
       AIRI_TWEET_DRY_RUN: ${{ vars.AIRI_TWEET_DRY_RUN || 'false' }}
-      AIRI_TWEET_MODE: ${{ github.event_name == 'schedule' && 'thought' || github.event.inputs.mode || 'push' }}
+      AIRI_TWEET_MODE: ${{ github.event.inputs.mode || 'push' }}
+      AIRI_TWEET_CONTEXT: ${{ github.event.inputs.context || '' }}
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
       AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_THOUGHT_TWEET_CHANCE || '0.35' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
