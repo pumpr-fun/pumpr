@@ -13211,6 +13211,34 @@ function parseAiriGitLog(text = "") {
     .filter((row) => row.hash && row.title);
 }
 
+async function fetchAiriGitHubCommits(branch = "main") {
+  const repo = sanitizeAiriText(process.env.AIRI_GITHUB_REPO || "pumpr-fun/pumpr", 120);
+  if (!/^[a-z0-9_.-]+\/[a-z0-9_.-]+$/i.test(repo)) return [];
+  const url = `https://api.github.com/repos/${repo}/commits?sha=${encodeURIComponent(branch)}&per_page=8`;
+  const headers = {
+    Accept: "application/vnd.github+json",
+    "User-Agent": "PumpR-Airi-Backroom/1.0"
+  };
+  const token = String(process.env.GITHUB_TOKEN || process.env.AIRI_GITHUB_TOKEN || "").trim();
+  if (token) headers.Authorization = `Bearer ${token}`;
+  try {
+    const response = await withTimeout(fetch(url, { headers }), 3500, "Airi GitHub commits");
+    if (!response.ok) return [];
+    const rows = await response.json().catch(() => []);
+    return (Array.isArray(rows) ? rows : [])
+      .map((row) => ({
+        hash: sanitizeAiriText(String(row?.sha || "").slice(0, 7), 16),
+        at: Date.parse(row?.commit?.author?.date || row?.commit?.committer?.date || "") || 0,
+        title: sanitizeAiriText(row?.commit?.message || "", 180).split("\\n")[0],
+        author: sanitizeAiriText(row?.commit?.author?.name || row?.author?.login || "", 80),
+        url: sanitizeAiriText(row?.html_url || "", 240)
+      }))
+      .filter((row) => row.hash && row.title);
+  } catch {
+    return [];
+  }
+}
+
 function airiWorkItemFromFile(file = "") {
   const name = sanitizeAiriText(file || "", 180);
   const lower = name.toLowerCase();
@@ -13260,15 +13288,20 @@ async function getAiriBackroomState(sessionId = "anonymous") {
     runAiriGit(["status", "--short"]),
     runAiriGit(["branch", "--show-current"])
   ]);
-  const commits = parseAiriGitLog(logResult.stdout);
+  const localCommits = parseAiriGitLog(logResult.stdout);
   const status = parseAiriGitStatus(statusResult.stdout);
+  const gitAvailable = Boolean(logResult.ok || statusResult.ok);
+  const githubCommits = gitAvailable ? [] : await fetchAiriGitHubCommits("main");
+  const commits = localCommits.length ? localCommits : githubCommits;
+  const remoteBacked = !gitAvailable && githubCommits.length > 0;
   const memories = (Array.isArray(session.memories) ? session.memories : []).slice(-12);
   const events = (Array.isArray(session.events) ? session.events : []).slice(-12);
   const changedFiles = status.map((row) => row.file).filter(Boolean);
   const workItems = Array.from(new Set([
+    ...commits.filter((commit) => /airi/i.test(`${commit.title} ${commit.author || ""}`)).slice(0, 4).map((commit) => `Review autonomous commit ${commit.hash}: ${commit.title}`),
     ...changedFiles.slice(0, 8).map(airiWorkItemFromFile),
     "If pushed to airi/self-improvements, GitHub can guard-check and self-merge Airi's branch",
-    "Run syntax checks before every push",
+    "Run syntax, compile, and Vercel build checks before every push",
     "Prepare code changes but keep wallet, posting, deploy, and push actions approval-gated"
   ])).slice(0, 10);
   const changes = [
@@ -13283,7 +13316,6 @@ async function getAiriBackroomState(sessionId = "anonymous") {
       body: row.status === "??" ? "New file in Airi's current worktree." : "Modified file in Airi's current worktree."
     }))
   ].slice(0, 10);
-  const gitAvailable = Boolean(logResult.ok || statusResult.ok);
   const stream = buildAiriBackroomStream({ commits, status, memories, events });
   const liveStream = stream.length
     ? stream
@@ -13292,7 +13324,7 @@ async function getAiriBackroomState(sessionId = "anonymous") {
           kind: gitAvailable ? "event" : "warn",
           text: gitAvailable
             ? "repo state is quiet; continuing guarded coding loop"
-            : "production runtime is live; git worktree state is handled by guarded GitHub flow"
+            : "production runtime is live; remote GitHub state is feeding the Backroom"
         },
         {
           kind: "event",
@@ -13306,11 +13338,12 @@ async function getAiriBackroomState(sessionId = "anonymous") {
   const currentTask = workItems[0] || "Watch Pump-r for the next improvement";
   return {
     ok: true,
-    real: gitAvailable,
+    real: gitAvailable || remoteBacked,
     mode: "read_only_coding_loop",
     approvalRequiredFor: ["writing files from browser", "wallet signatures", "public posts", "deployments", "git push"],
-    branch: sanitizeAiriText(branchResult.stdout || "unknown", 80),
+    branch: sanitizeAiriText(branchResult.stdout || (remoteBacked ? "github:main" : "unknown"), 80),
     gitAvailable,
+    remoteBacked,
     currentTask,
     workItems,
     changes,

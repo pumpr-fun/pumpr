@@ -1,4 +1,7 @@
 const AIRI_LIVE_SESSION_KEY = "pumpr.airi.session.v1";
+const AIRI_LIVE_STATE_KEY = "pumpr.airi.liveState.v2";
+const AIRI_LIVE_TERMINAL_KEY = "pumpr.airi.terminal.v2";
+const MAX_SAVED_TERMINAL_LINES = 20;
 
 const fallbackTasks = [
   {
@@ -135,6 +138,20 @@ function safeParse(value, fallback) {
   }
 }
 
+function readLocalJson(key, fallback) {
+  try {
+    return safeParse(localStorage.getItem(key), fallback);
+  } catch {
+    return fallback;
+  }
+}
+
+function writeLocalJson(key, value) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {}
+}
+
 function airiSessionId() {
   try {
     const existing = localStorage.getItem(AIRI_LIVE_SESSION_KEY);
@@ -158,6 +175,54 @@ function escapeHtml(value = "") {
 
 function pick(list) {
   return list[Math.floor(Math.random() * list.length)] || "";
+}
+
+function hydrateLiveState() {
+  const saved = readLocalJson(AIRI_LIVE_STATE_KEY, null);
+  if (!saved || typeof saved !== "object") return false;
+  state.cycle = Math.max(0, Number(saved.cycle || 0));
+  state.signals = Math.max(0, Number(saved.signals || 0));
+  state.changeIndex = Math.max(0, Number(saved.changeIndex || 0));
+  state.taskIndex = Math.max(0, Number(saved.taskIndex || 0));
+  state.streamCursor = Math.max(0, Number(saved.streamCursor || 0));
+  state.progress = Math.max(0, Math.min(99, Number(saved.progress || 0)));
+  state.branch = String(saved.branch || state.branch || "unknown").slice(0, 80);
+  state.realMode = Boolean(saved.realMode);
+  if (Array.isArray(saved.memories) && saved.memories.length) {
+    state.memories = saved.memories.map((item) => String(item || "").trim()).filter(Boolean).slice(-18);
+  }
+  if (Array.isArray(saved.workItems)) {
+    state.workItems = saved.workItems.map((item) => String(item || "").trim()).filter(Boolean).slice(0, 10);
+  }
+  if (Array.isArray(saved.changes)) {
+    state.changes = saved.changes.filter(Boolean).slice(0, 10);
+  }
+  if (Array.isArray(saved.stream)) {
+    state.stream = saved.stream.filter(Boolean).slice(0, 24);
+  }
+  if (saved.metrics && typeof saved.metrics === "object") {
+    state.metrics = saved.metrics;
+  }
+  return true;
+}
+
+function saveLiveState() {
+  writeLocalJson(AIRI_LIVE_STATE_KEY, {
+    cycle: state.cycle,
+    signals: state.signals,
+    changeIndex: state.changeIndex,
+    taskIndex: state.taskIndex,
+    streamCursor: state.streamCursor,
+    progress: state.progress,
+    branch: state.branch,
+    realMode: state.realMode,
+    metrics: state.metrics,
+    memories: state.memories.slice(-18),
+    workItems: state.workItems.slice(0, 10),
+    changes: state.changes.slice(0, 10),
+    stream: state.stream.slice(0, 24),
+    savedAt: Date.now()
+  });
 }
 
 function activeTasks() {
@@ -187,6 +252,29 @@ function tickClock() {
   const now = new Date();
   dom.date.textContent = now.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" });
   dom.clock.textContent = formatTime(now);
+}
+
+function restoreTerminal() {
+  const saved = readLocalJson(AIRI_LIVE_TERMINAL_KEY, []);
+  if (!Array.isArray(saved) || !saved.length) return false;
+  dom.terminal.innerHTML = "";
+  saved.slice(-MAX_SAVED_TERMINAL_LINES).forEach((item) => {
+    const line = document.createElement("p");
+    line.dataset.kind = String(item?.kind || "signal").slice(0, 40);
+    line.innerHTML = `<span>${escapeHtml(item?.time || "--:--:--")}</span>${escapeHtml(item?.text || "")}`;
+    dom.terminal.appendChild(line);
+  });
+  dom.terminal.scrollTop = dom.terminal.scrollHeight;
+  return true;
+}
+
+function saveTerminal() {
+  const lines = Array.from(dom.terminal.children).slice(-MAX_SAVED_TERMINAL_LINES).map((line) => ({
+    kind: String(line.dataset.kind || "signal").slice(0, 40),
+    time: String(line.querySelector("span")?.textContent || "").slice(0, 20),
+    text: String(line.textContent || "").replace(String(line.querySelector("span")?.textContent || ""), "").trim().slice(0, 260)
+  }));
+  writeLocalJson(AIRI_LIVE_TERMINAL_KEY, lines);
 }
 
 function renderTask() {
@@ -253,6 +341,7 @@ function appendStreamLine(text, kind = "signal") {
   dom.terminal.appendChild(line);
   while (dom.terminal.children.length > 24) dom.terminal.removeChild(dom.terminal.firstElementChild);
   dom.terminal.scrollTop = dom.terminal.scrollHeight;
+  saveTerminal();
 }
 
 function streamText() {
@@ -269,7 +358,7 @@ function streamText() {
   return template
     .replace("{signal}", task.signal)
     .replace("{memory}", pick(state.memories))
-    .replace("{task}", pick(queue));
+    .replace("{task}", pick(activeQueue()));
 }
 
 function advance() {
@@ -292,6 +381,7 @@ function advance() {
   dom.streamState.textContent = state.realMode ? "repo-backed" : state.cycle % 5 === 0 ? "rewriting" : "writing";
 
   appendStreamLine(streamText(), state.lastStreamKind);
+  saveLiveState();
 }
 
 function applyBackroomPayload(payload = {}) {
@@ -328,6 +418,7 @@ function applyBackroomPayload(payload = {}) {
   renderChanges();
   renderMemory();
   renderQueue();
+  saveLiveState();
 }
 
 async function fetchBackroomState() {
@@ -346,18 +437,21 @@ async function fetchBackroomState() {
 }
 
 function boot() {
+  const resumedState = hydrateLiveState();
+  const resumedTerminal = restoreTerminal();
   tickClock();
   renderTask();
   renderMind();
   renderChanges();
   renderMemory();
   renderQueue();
-  appendStreamLine("Airi live operating room initialized", "change");
-  appendStreamLine("self-upgrade loop waiting for real repo state", "signal");
+  if (resumedTerminal || resumedState) {
+    appendStreamLine("resumed Backroom stream from saved room state", "event");
+  } else {
+    appendStreamLine("Airi live operating room initialized", "change");
+    appendStreamLine("self-upgrade loop waiting for real repo state", "signal");
+  }
   fetchBackroomState();
-
-  // Immediately update clock display on load for accurate time
-  tickClock();
 
   window.setInterval(tickClock, 1000);
   window.setInterval(advance, 1850);
