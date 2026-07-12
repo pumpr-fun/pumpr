@@ -6,6 +6,7 @@ const ROOT = process.cwd();
 const MAX_EDIT_FILES = Number(process.env.AIRI_CODER_MAX_FILES || 4);
 const MAX_REPLACE_BYTES = Number(process.env.AIRI_CODER_MAX_REPLACE_BYTES || 120_000);
 const MODEL = String(process.env.OPENAI_AIRI_CODER_MODEL || process.env.OPENAI_MODEL || "gpt-4.1-mini").trim();
+const OPENAI_TIMEOUT_MS = Math.max(15_000, Number(process.env.AIRI_CODER_OPENAI_TIMEOUT_MS || 75_000));
 
 const allowList = [
   /^backend\/server\.js$/,
@@ -315,19 +316,30 @@ async function requestPlan(prompt) {
     return null;
   }
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify({
-      model: MODEL,
-      input: prompt,
-      temperature: 0.25,
-      max_output_tokens: Math.max(1200, Math.min(6000, Number(process.env.AIRI_CODER_MAX_OUTPUT_TOKENS || 3200)))
-    })
-  });
+  let response;
+  try {
+    response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
+        model: MODEL,
+        input: prompt,
+        temperature: 0.25,
+        max_output_tokens: Math.max(1200, Math.min(6000, Number(process.env.AIRI_CODER_MAX_OUTPUT_TOKENS || 3200)))
+      }),
+      signal: AbortSignal.timeout(OPENAI_TIMEOUT_MS)
+    });
+  } catch (error) {
+    const message = String(error?.message || error || "");
+    if (error?.name === "TimeoutError" || error?.name === "AbortError" || /timeout|aborted/i.test(message)) {
+      log(`OpenAI did not return within ${OPENAI_TIMEOUT_MS}ms. Skipping this cycle without a patch.`);
+      return null;
+    }
+    throw error;
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     fail(payload?.error?.message || `OpenAI returned ${response.status}`);
