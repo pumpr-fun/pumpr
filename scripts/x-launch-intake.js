@@ -545,17 +545,23 @@ async function fetchMentionsFromConfiguredSource(state) {
   const errors = [];
   if (source === "twex") {
     const combined = [];
-    try {
-      const notifications = await fetchMentionsWithTwexNotifications(state);
-      const label = hasPendingConversation(state) ? "all/pending-thread" : "mention";
-      log(`Twex notifications returned ${notifications.length} ${label} notification(s).`);
-      combined.push(...notifications);
-    } catch (error) {
-      errors.push(`notifications: ${error.message || error}`);
-      log(`Twex notifications unavailable: ${error.message || error}`);
+    const notificationMode = cleanText(process.env.X_LAUNCH_TWEX_NOTIFICATIONS_MODE || "pending", 20).toLowerCase();
+    const shouldFetchNotifications = notificationMode === "always" || (notificationMode !== "off" && hasPendingConversation(state));
+    if (shouldFetchNotifications) {
+      try {
+        const notifications = await fetchMentionsWithTwexNotifications(state);
+        const label = hasPendingConversation(state) ? "all/pending-thread" : "mention";
+        log(`Twex notifications returned ${notifications.length} ${label} notification(s).`);
+        combined.push(...notifications);
+      } catch (error) {
+        errors.push(`notifications: ${error.message || error}`);
+        log(`Twex notifications unavailable: ${error.message || error}`);
+      }
+    } else {
+      log(`Twex notifications skipped (${notificationMode}); public search handles fresh mentions.`);
     }
 
-    if (TWEX_READ_DELAY_MS > 0) {
+    if (shouldFetchNotifications && TWEX_READ_DELAY_MS > 0) {
       await sleep(TWEX_READ_DELAY_MS);
     }
 

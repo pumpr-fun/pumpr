@@ -1,6 +1,6 @@
 const { main } = require("./x-launch-intake");
 
-const DEFAULT_INTERVAL_SECONDS = 15;
+const DEFAULT_INTERVAL_SECONDS = 30;
 
 function log(message) {
   console.log(`[x-launch-loop] ${message}`);
