@@ -213,7 +213,13 @@ function processedStatus(state, tweetId) {
 
 function shouldReprocessTweet(tweet, state) {
   const status = processedStatus(state, tweet.id);
-  return status === "queued_author_not_allowlisted" && isTruthy(process.env.X_LAUNCH_ALLOW_PUBLIC);
+  if (status === "queued_author_not_allowlisted" && isTruthy(process.env.X_LAUNCH_ALLOW_PUBLIC)) return true;
+  if (status === "reply_failed" || status === "error_no_reply") return true;
+  if (status === "error") {
+    const fallback = fallbackClassify(tweet, {});
+    return Boolean(fallback.isLaunchRequest && fallback.launchpad && !DIRECT_LAUNCHPADS.has(fallback.launchpad));
+  }
+  return false;
 }
 
 function fetchHeaders(extra = {}) {
@@ -469,15 +475,14 @@ async function fetchMentionsWithTwexSearch() {
     .split(/\r?\n|\|/)
     .map((term) => term.trim())
     .filter(Boolean);
-  const searchTerms = configuredTerms.length
-    ? configuredTerms
-    : [
-        `@${username}`,
-        `"@${username}"`,
-        username,
-        `"${username}"`,
-        `to:${username}`
-      ];
+  const searchTerms = [...new Set([
+    ...configuredTerms,
+    `@${username}`,
+    `"@${username}"`,
+    `to:${username}`,
+    username,
+    `"${username}"`
+  ].filter(Boolean))];
   log(`Twex public search terms: ${searchTerms.join(" | ")}`);
   const rows = [];
   for (const term of searchTerms.slice(0, 5)) {
@@ -516,7 +521,8 @@ function dedupeMentions(tweets = [], state = {}) {
   const seen = new Set();
   return tweets
     .filter((tweet) => {
-      if (!tweet.id || seen.has(tweet.id) || processed.has(tweet.id)) return false;
+      if (!tweet.id || seen.has(tweet.id)) return false;
+      if (processed.has(tweet.id) && !shouldReprocessTweet(tweet, state)) return false;
       seen.add(tweet.id);
       return true;
     })
@@ -994,12 +1000,17 @@ async function processTweet(tweet, state) {
     appendQueue(publicRequest(tweet, classification), "error", { error: error.message || String(error) });
     log(`Failed ${tweet.id}: ${error.message || error}`);
     if (!state.repliedTweetIds.includes(tweet.id)) {
-      await postReply(tweet.id, `I found the launch request, but the launch rail hit an error: ${cleanText(error.message || error, 180)}`).catch((replyError) => {
+      const replyResult = await postReply(tweet.id, `I found the launch request, but the launch rail hit an error: ${cleanText(error.message || error, 180)}`).then(() => {
+        state.repliedTweetIds.push(tweet.id);
+        return "sent";
+      }).catch((replyError) => {
         log(`Error reply failed: ${replyError.message}`);
+        rememberProcessed(state, tweet.id, "reply_failed");
+        return "failed";
       });
-      state.repliedTweetIds.push(tweet.id);
+      if (replyResult === "failed") return "reply_failed";
     }
-    rememberProcessed(state, tweet.id, "error");
+    rememberProcessed(state, tweet.id, state.repliedTweetIds.includes(tweet.id) ? "error" : "error_no_reply");
     return "error";
   }
 }
