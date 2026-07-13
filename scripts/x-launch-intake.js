@@ -277,19 +277,139 @@ function twexTweetUser(tweet = {}) {
   return tweet.user || tweet.author || tweet.core?.user_results?.result || tweet.legacy?.user || {};
 }
 
+function mediaCandidate(value = "") {
+  const raw = String(value || "").trim();
+  if (!raw || !/^https?:\/\//i.test(raw)) return "";
+  try {
+    const parsed = new URL(raw);
+    const host = parsed.hostname.toLowerCase();
+    const pathName = parsed.pathname.toLowerCase();
+    const isTwitterMedia = host === "pbs.twimg.com" || host === "video.twimg.com";
+    const isImagePath = /\.(png|jpe?g|gif|webp)(?:$|\?)/i.test(raw) || /\/media\//i.test(pathName);
+    if (!isTwitterMedia && !isImagePath) return "";
+    if (host === "pbs.twimg.com" && parsed.searchParams.has("name")) {
+      parsed.searchParams.set("name", "large");
+    }
+    return parsed.toString();
+  } catch {
+    return "";
+  }
+}
+
+function twitterImageVariant(value = "", size = "large") {
+  const raw = mediaCandidate(value);
+  if (!raw) return "";
+  try {
+    const parsed = new URL(raw);
+    if (parsed.hostname.toLowerCase() === "pbs.twimg.com" && parsed.searchParams.has("name")) {
+      parsed.searchParams.set("name", size);
+    }
+    return parsed.toString();
+  } catch {
+    return raw;
+  }
+}
+
+function imageMimeFromUrl(url = "") {
+  const pathname = (() => {
+    try {
+      return new URL(url).pathname.toLowerCase();
+    } catch {
+      return "";
+    }
+  })();
+  if (pathname.endsWith(".png")) return "image/png";
+  if (pathname.endsWith(".webp")) return "image/webp";
+  if (pathname.endsWith(".gif")) return "image/gif";
+  if (pathname.endsWith(".svg")) return "image/svg+xml";
+  return "image/jpeg";
+}
+
+async function uploadImageDataUrl(dataUrl) {
+  const payload = await fetchJson(`${APP_BASE_URL}/api/upload-image`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ dataUrl, requireHosted: true })
+  });
+  return String(payload?.url || "").trim();
+}
+
+async function relayLaunchImage(imageUrl = "") {
+  const direct = mediaCandidate(imageUrl);
+  if (!direct) return "";
+  const variants = [...new Set([
+    twitterImageVariant(direct, "large"),
+    twitterImageVariant(direct, "medium"),
+    twitterImageVariant(direct, "small"),
+    direct
+  ].filter(Boolean))];
+
+  for (const url of variants) {
+    try {
+      const response = await fetch(url, {
+        headers: {
+          Accept: "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+          "User-Agent": "Pump-r-X-Launch/1.0"
+        }
+      });
+      if (!response.ok) {
+        log(`Tweet image fetch failed ${response.status} for ${url}`);
+        continue;
+      }
+      const contentType = String(response.headers.get("content-type") || imageMimeFromUrl(url)).split(";")[0].trim().toLowerCase();
+      if (!contentType.startsWith("image/")) {
+        log(`Tweet image fetch returned ${contentType || "unknown content type"} for ${url}`);
+        continue;
+      }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      if (!buffer.length || buffer.length > 1024 * 1024) {
+        log(`Tweet image variant ${url} is ${buffer.length} bytes; trying another size.`);
+        continue;
+      }
+      const uploaded = await uploadImageDataUrl(`data:${contentType};base64,${buffer.toString("base64")}`);
+      if (uploaded) {
+        log(`Relayed tweet image for Pump.fun metadata: ${uploaded}`);
+        return uploaded;
+      }
+    } catch (error) {
+      log(`Tweet image relay failed for ${url}: ${error.message || error}`);
+    }
+  }
+
+  log("Using direct tweet image URL because hosted relay was unavailable.");
+  return direct;
+}
+
 function normalizeTwexMedia(media = []) {
   return (Array.isArray(media) ? media : [])
-    .map((item) => ({
-      type: item?.type || item?.media_type || "photo",
-      url: item?.url || item?.media_url_https || item?.media_url || item?.expanded_url || "",
-      preview_image_url: item?.preview_image_url || item?.thumbnail_url || item?.media_url_https || ""
-    }))
+    .map((item) => {
+      const url = mediaCandidate(item?.media_url_https) ||
+        mediaCandidate(item?.media_url) ||
+        mediaCandidate(item?.url) ||
+        mediaCandidate(item?.secure_url) ||
+        mediaCandidate(item?.image_url) ||
+        mediaCandidate(item?.image?.url) ||
+        mediaCandidate(item?.original?.url) ||
+        mediaCandidate(item?.expanded_url);
+      const preview = mediaCandidate(item?.preview_image_url) ||
+        mediaCandidate(item?.thumbnail_url) ||
+        mediaCandidate(item?.thumb?.url) ||
+        mediaCandidate(item?.media_url_https) ||
+        mediaCandidate(item?.media_url);
+      return {
+        type: item?.type || item?.media_type || item?.kind || "photo",
+        url,
+        preview_image_url: preview
+      };
+    })
     .filter((item) => item.url || item.preview_image_url);
 }
 
 function twexTweetMedia(tweet = {}) {
   return [
     ...normalizeTwexMedia(tweet.media),
+    ...normalizeTwexMedia(tweet.photos),
+    ...normalizeTwexMedia(tweet.attachments?.media),
     ...normalizeTwexMedia(tweet.entities?.media),
     ...normalizeTwexMedia(tweet.extended_entities?.media),
     ...normalizeTwexMedia(tweet.legacy?.entities?.media),
@@ -439,11 +559,12 @@ async function fetchMentionsFromConfiguredSource(state) {
 }
 
 function firstImageUrl(tweet = {}) {
-  const image = (Array.isArray(tweet.media) ? tweet.media : []).find((media) => {
+  const mediaRows = Array.isArray(tweet.media) ? tweet.media : [];
+  const image = mediaRows.find((media) => {
     const type = String(media?.type || "").toLowerCase();
     return type === "photo" || type === "animated_gif" || type === "video";
-  });
-  return String(image?.url || image?.preview_image_url || "").trim();
+  }) || mediaRows[0];
+  return mediaCandidate(image?.url) || mediaCandidate(image?.preview_image_url);
 }
 
 function extractLabeled(text, labels, stopLabels) {
@@ -701,6 +822,7 @@ async function signTransactionPayload(payload, keypair) {
 async function launchPumpFun(request) {
   const keypair = decodeLaunchKeypair();
   const creator = keypair.publicKey.toBase58();
+  const imageUri = await relayLaunchImage(request.imageUrl);
   const launchPayload = await fetchJson(`${APP_BASE_URL}/api/pumpfun/launch`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -708,7 +830,7 @@ async function launchPumpFun(request) {
       name: request.name,
       symbol: request.ticker,
       description: request.description,
-      imageUri: request.imageUrl,
+      imageUri,
       userPublicKey: creator,
       creatorWallet: creator,
       starterBuySol: "0",
@@ -745,6 +867,36 @@ function publicRequest(tweet, classification) {
     confidence: classification.confidence,
     missingFields: classification.missingFields || []
   };
+}
+
+function pumpFunCoinUrl(result = {}) {
+  const direct = String(result.pumpfunUrl || "").trim();
+  if (direct) return direct;
+  const mint = String(result.mint || result.tokenAddress || "").trim();
+  return mint ? `https://pump.fun/coin/${mint}` : "https://pump.fun";
+}
+
+function launchSuccessReply(tweet, request, result) {
+  const handle = String(request.authorUsername || tweet.authorUsername || "").replace(/^@/, "").trim();
+  const mention = handle ? `@${handle}` : "Request";
+  const url = pumpFunCoinUrl(result);
+  const baseLines = [
+    `${mention} launched on Pump.fun`,
+    `Name: ${cleanText(request.name, 32)}`,
+    `Ticker: $${normalizeTicker(request.ticker)}`,
+    `Desc: ${cleanText(request.description, 72)}`,
+    url
+  ].filter((line) => line && !/:\s*$/.test(line));
+  let reply = baseLines.join("\n");
+  if (reply.length <= 270) return reply;
+  const shortLines = [
+    `${mention} launched on Pump.fun`,
+    `Name: ${cleanText(request.name, 32)}`,
+    `Ticker: $${normalizeTicker(request.ticker)}`,
+    url
+  ];
+  reply = shortLines.join("\n");
+  return reply.length <= 270 ? reply : `${mention} launched $${normalizeTicker(request.ticker)}\n${url}`;
 }
 
 async function handleLaunchRequest(tweet, classification, state) {
@@ -800,7 +952,7 @@ async function handleLaunchRequest(tweet, classification, state) {
     pumpfunUrl: result.pumpfunUrl,
     at: new Date().toISOString()
   });
-  await postReply(tweet.id, `Launched $${request.ticker} on Pump.fun: ${result.pumpfunUrl || `https://pump.fun/coin/${result.mint || result.tokenAddress}`}`);
+  await postReply(tweet.id, launchSuccessReply(tweet, request, result));
   return "launched";
 }
 
