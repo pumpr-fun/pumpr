@@ -17,6 +17,14 @@ on:
         description: "Extra issue/thought context for Airi"
         required: false
         default: ""
+      force:
+        description: "Ignore prior tweet memory for this manual run"
+        required: false
+        default: "true"
+        type: choice
+        options:
+          - "true"
+          - "false"
   push:
     branches:
       - main
@@ -36,9 +44,11 @@ jobs:
       AIRI_TWEET_DRY_RUN: ${{ vars.AIRI_TWEET_DRY_RUN || 'false' }}
       AIRI_TWEET_MODE: ${{ github.event.inputs.mode || 'push' }}
       AIRI_TWEET_CONTEXT: ${{ github.event.inputs.context || '' }}
+      AIRI_TWEET_FORCE: ${{ github.event.inputs.force || 'false' }}
       AIRI_TWEET_HISTORY_PATH: .airi-tweet-history.json
       AIRI_TWEET_REQUIRE_POST: ${{ vars.AIRI_TWEET_REQUIRE_POST || 'true' }}
       AIRI_THOUGHT_TWEET_CHANCE: ${{ vars.AIRI_THOUGHT_TWEET_CHANCE || '0.35' }}
+      AIRI_X_USERNAME: ${{ vars.AIRI_X_USERNAME || 'airi_agi' }}
       OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
       OPENAI_AIRI_TWEET_MODEL: ${{ vars.OPENAI_AIRI_TWEET_MODEL || vars.OPENAI_MODEL || 'gpt-4.1-mini' }}
       AIRI_X_COOKIE: ${{ secrets.AIRI_X_COOKIE || secrets.AIRI_TWITTER_COOKIE || secrets.TWITTER_X_COOKIE || secrets.X_COOKIE || secrets.TWEXAPI_X_COOKIE }}

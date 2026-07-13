@@ -730,6 +730,76 @@ async function downloadReplyMedia(mediaUrl = "") {
   return filePath;
 }
 
+async function fillXComposer(page, composer, text) {
+  await composer.waitFor({ state: "visible", timeout: 25_000 });
+  await composer.click();
+  await page.keyboard.press("Control+A").catch(() => {});
+  await page.keyboard.press("Backspace").catch(() => {});
+  await page.waitForTimeout(250);
+  await page.keyboard.insertText(text);
+  await page.waitForTimeout(800);
+  const currentText = cleanText(await composer.innerText().catch(() => ""), 600);
+  if (!currentText.includes(cleanText(text, 600))) {
+    await composer.fill(text).catch(() => {});
+    await page.waitForTimeout(800);
+  }
+  const finalText = cleanText(await composer.innerText().catch(() => ""), 600);
+  if (!finalText.includes(cleanText(text, 600))) {
+    throw new Error(`Browser reply composer did not accept text. composer="${finalText}"`);
+  }
+}
+
+async function waitForXButtonEnabled(page, locator, label, logger = () => {}) {
+  await locator.waitFor({ state: "visible", timeout: 20_000 });
+  for (let index = 0; index < 30; index += 1) {
+    const enabled = await locator.evaluate((button) => {
+      return button.getAttribute("aria-disabled") !== "true" && !button.disabled;
+    }).catch(() => false);
+    if (enabled) return;
+    await page.waitForTimeout(500);
+  }
+  const buttonState = await locator.evaluate((button) => ({
+    ariaDisabled: button.getAttribute("aria-disabled"),
+    disabled: Boolean(button.disabled),
+    text: button.innerText || ""
+  })).catch(() => null);
+  const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 260);
+  logger(`Browser ${label} stayed disabled. button=${JSON.stringify(buttonState)} body="${bodyText}"`);
+  throw new Error(`Browser ${label} stayed disabled.`);
+}
+
+function visibleReplyNeedle(text) {
+  const lines = String(text || "")
+    .split(/\n+/)
+    .map((line) => cleanText(line.replace(/https?:\/\/\S+/g, ""), 120))
+    .filter(Boolean);
+  return (
+    lines.find((line) => /(launched|dry run|queued|parsed|prep|found|error)/i.test(line)) ||
+    lines.find((line) => !/^@[\w_]+$/i.test(line)) ||
+    lines[0] ||
+    ""
+  ).slice(0, 90);
+}
+
+async function waitForPostedReply(page, tweetId, text) {
+  const needle = visibleReplyNeedle(text);
+  if (!needle) throw new Error("Browser reply verification had no text to check.");
+  await page.goto(`https://x.com/i/status/${encodeURIComponent(String(tweetId))}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+  await page.waitForTimeout(3500);
+  for (let index = 0; index < 12; index += 1) {
+    const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 6000);
+    if (bodyText.includes(needle)) return;
+    await page.mouse.wheel(0, 900).catch(() => {});
+    await page.waitForTimeout(1000);
+    const scrolledText = cleanText(await page.locator("body").innerText().catch(() => ""), 6000);
+    if (scrolledText.includes(needle)) return;
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  }
+  const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 320);
+  throw new Error(`Browser clicked reply, but the reply was not visible in thread ${tweetId}. needle="${needle}" body="${bodyText}"`);
+}
+
 async function replyWithBrowser(tweetId, text, mediaUrl = "") {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE so the browser reply worker can open @pumpr_fun.");
@@ -750,9 +820,7 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
     await page.waitForTimeout(3500);
 
     const composer = page.locator('[data-testid="tweetTextarea_0"]').first();
-    await composer.waitFor({ state: "visible", timeout: 25_000 });
-    await composer.click();
-    await composer.fill(text);
+    await fillXComposer(page, composer, text);
 
     if (mediaUrl) {
       try {
@@ -766,9 +834,11 @@ async function replyWithBrowser(tweetId, text, mediaUrl = "") {
     }
 
     const replyButton = page.locator('[data-testid="tweetButtonInline"], [data-testid="tweetButton"]').last();
+    await waitForXButtonEnabled(page, replyButton, "reply button", log);
     await clickXButton(page, replyButton, "reply button", log);
     await page.waitForTimeout(4500);
-    log(`Browser reply posted to ${tweetId}.`);
+    await waitForPostedReply(page, tweetId, text);
+    log(`Browser reply posted and verified to ${tweetId}.`);
     return { ok: true, method: "browser" };
   } finally {
     await browser.close().catch(() => {});

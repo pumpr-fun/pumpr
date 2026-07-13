@@ -98,6 +98,53 @@ function browserCookiesFromHeader(cookieHeader = "") {
   })));
 }
 
+function isTruthy(value) {
+  return /^(1|true|yes|on)$/i.test(String(value || ""));
+}
+
+function airiUsername() {
+  return String(process.env.AIRI_X_USERNAME || process.env.AIRI_TWITTER_USERNAME || "airi_agi")
+    .replace(/^@/, "")
+    .trim();
+}
+
+async function fillXComposer(page, composer, text, label) {
+  await composer.waitFor({ state: "visible", timeout: 20_000 });
+  await composer.click();
+  await page.keyboard.press("Control+A").catch(() => {});
+  await page.keyboard.press("Backspace").catch(() => {});
+  await page.waitForTimeout(250);
+  await page.keyboard.insertText(text);
+  await page.waitForTimeout(800);
+  const currentText = cleanText(await composer.innerText().catch(() => ""), 500);
+  if (!currentText.includes(cleanText(text, 500))) {
+    await composer.fill(text).catch(() => {});
+    await page.waitForTimeout(800);
+  }
+  const finalText = cleanText(await composer.innerText().catch(() => ""), 500);
+  if (!finalText.includes(cleanText(text, 500))) {
+    throw new Error(`Airi browser could not fill X ${label}. composer="${finalText}"`);
+  }
+}
+
+async function waitForXButtonEnabled(page, locator, label) {
+  await locator.waitFor({ state: "visible", timeout: 20_000 });
+  for (let index = 0; index < 30; index += 1) {
+    const enabled = await locator.evaluate((button) => {
+      return button.getAttribute("aria-disabled") !== "true" && !button.disabled;
+    }).catch(() => false);
+    if (enabled) return;
+    await page.waitForTimeout(500);
+  }
+  const buttonState = await locator.evaluate((button) => ({
+    ariaDisabled: button.getAttribute("aria-disabled"),
+    disabled: Boolean(button.disabled),
+    text: button.innerText || ""
+  })).catch(() => null);
+  const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 260);
+  throw new Error(`Airi X ${label} stayed disabled. button=${JSON.stringify(buttonState)} body="${bodyText}"`);
+}
+
 async function clickXButton(page, locator, label) {
   await locator.waitFor({ state: "visible", timeout: 20_000 });
   await locator.scrollIntoViewIfNeeded().catch(() => {});
@@ -119,6 +166,29 @@ async function clickXButton(page, locator, label) {
     }
   }
   throw lastError || new Error(`Could not click ${label}.`);
+}
+
+function visibleTweetNeedle(tweet) {
+  return cleanText(tweet.replace(/https?:\/\/\S+/g, ""), 120).slice(0, 80);
+}
+
+async function waitForPostedTweet(page, tweet) {
+  const username = airiUsername();
+  const needle = visibleTweetNeedle(tweet);
+  if (!needle) throw new Error("Airi tweet verification had no text to check.");
+  if (username) {
+    await page.goto(`https://x.com/${encodeURIComponent(username)}`, { waitUntil: "domcontentloaded", timeout: 45_000 });
+    await page.waitForTimeout(3500);
+  }
+  for (let index = 0; index < 12; index += 1) {
+    const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 5000);
+    if (bodyText.includes(needle)) return;
+    await page.waitForTimeout(1500);
+    await page.reload({ waitUntil: "domcontentloaded", timeout: 45_000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  }
+  const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 320);
+  throw new Error(`Airi browser clicked post, but the tweet was not visible on @${username || "profile"}. needle="${needle}" body="${bodyText}"`);
 }
 
 function clipTweet(text) {
@@ -575,21 +645,19 @@ async function postTweet(tweet) {
       });
     }
 
-    const existingText = cleanText(await composer.innerText().catch(() => ""), 320);
-    await composer.click();
-    if (!existingText.includes(tweet)) {
-      await page.keyboard.insertText(tweet);
-    }
+    await fillXComposer(page, composer, tweet, "composer");
 
     const postButton = page.locator('[data-testid="tweetButton"], [data-testid="tweetButtonInline"]').last();
     await postButton.waitFor({ state: "visible", timeout: 20_000 }).catch(async () => {
       const bodyText = cleanText(await page.locator("body").innerText().catch(() => ""), 240);
       throw new Error(`Airi browser could not find X post button. url=${page.url()} body="${bodyText}"`);
     });
+    await waitForXButtonEnabled(page, postButton, "post button");
     await clickXButton(page, postButton, "post button");
     await page.waitForTimeout(4500);
+    await waitForPostedTweet(page, tweet);
 
-    console.log("[airi-tweet] Tweet posted through browser.");
+    console.log("[airi-tweet] Tweet posted and verified through browser.");
     return { ok: true, method: "browser" };
   } finally {
     await browser.close().catch(() => {});
@@ -611,19 +679,20 @@ async function main() {
   const event = readPushEvent();
   const mode = cleanText(process.env.AIRI_TWEET_MODE || "", 40).toLowerCase() || "push";
   const manualContext = cleanText(process.env.AIRI_TWEET_CONTEXT || "", 500);
+  const forceTweet = isTruthy(process.env.AIRI_TWEET_FORCE) || String(process.env.GITHUB_EVENT_NAME || "").toLowerCase() === "workflow_dispatch";
 
-  if (mode === "thought" && shouldSkipThought(history)) {
+  if (!forceTweet && mode === "thought" && shouldSkipThought(history)) {
     console.log("[airi-tweet] Thought window opened, but Airi chose silence this time.");
     return;
   }
-  if (mode === "world" && shouldSkipWorld(history)) {
+  if (!forceTweet && mode === "world" && shouldSkipWorld(history)) {
     console.log("[airi-tweet] World pulse opened, but Airi chose to keep watching.");
     return;
   }
 
   const commit = latestCommitFromEvent(event);
   const sha = cleanText(commit.id || event.after || process.env.GITHUB_SHA || "", 80);
-  if (mode !== "thought" && mode !== "world" && sha && history.commits?.includes(sha)) {
+  if (!forceTweet && mode !== "thought" && mode !== "world" && sha && history.commits?.includes(sha)) {
     console.log(`[airi-tweet] Commit ${sha.slice(0, 7)} was already tweeted. Skipping.`);
     return;
   }
@@ -646,7 +715,7 @@ async function main() {
     return;
   }
   const result = await postTweet(tweet);
-  if (!result?.skipped || result?.reason === "dry_run") {
+  if (result?.ok || result?.reason === "dry_run") {
     rememberTweet(history, tweet, { mode, sha, topics: worldSignals.slice(0, 5) });
   }
 }
