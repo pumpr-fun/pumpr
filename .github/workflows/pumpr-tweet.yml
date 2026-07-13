@@ -1,0 +1,44 @@
+name: Pump-r tweet
+
+on:
+  workflow_dispatch:
+    inputs:
+      text:
+        description: "Tweet text to post from @pumpr_fun"
+        required: true
+        type: string
+      dry_run:
+        description: "Print without posting"
+        required: false
+        default: "false"
+        type: choice
+        options:
+          - "false"
+          - "true"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pumpr-tweet
+  cancel-in-progress: false
+
+jobs:
+  tweet:
+    runs-on: ubuntu-latest
+    env:
+      PUMPR_TWEET_TEXT: ${{ inputs.text }}
+      PUMPR_TWEET_DRY_RUN: ${{ inputs.dry_run }}
+      TWEXAPI_BEARER_TOKEN: ${{ secrets.TWEXAPI_BEARER_TOKEN || secrets.TWITTERX_API_KEY || secrets.TWEX_API_KEY }}
+      PUMPR_TWEX_X_COOKIE: ${{ secrets.PUMPR_TWEX_X_COOKIE || secrets.TWEXAPI_PUMPR_X_COOKIE || secrets.X_PUMPR_COOKIE || secrets.PUMPR_X_COOKIE }}
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Post Pump-r tweet
+        run: node scripts/pumpr-tweet.js
