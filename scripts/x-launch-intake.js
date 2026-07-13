@@ -13,6 +13,7 @@ const MAX_MENTIONS = Math.max(5, Math.min(100, Number(process.env.X_LAUNCH_MAX_M
 const MAX_STATE_IDS = 240;
 const EMPTY_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_EMPTY_FETCH_BACKOFF_MINUTES || 0));
 const ACTIVE_FETCH_BACKOFF_MINUTES = Math.max(0, Number(process.env.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || 0));
+const TWEX_READ_DELAY_MS = Math.max(0, Number(process.env.X_LAUNCH_TWEX_READ_DELAY_MS || 5500));
 
 const LAUNCHPAD_ALIASES = new Map([
   ["pumpfun", "pumpfun"],
@@ -151,6 +152,30 @@ function minutesSince(value = "") {
   const ts = Date.parse(value || "");
   if (!Number.isFinite(ts)) return Infinity;
   return (Date.now() - ts) / 60_000;
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function twexRetryDelayMs(error) {
+  const message = String(error?.message || error || "");
+  const waitMatch = message.match(/wait\s+([\d.]+)\s*seconds/i);
+  if (waitMatch) return Math.ceil(Number(waitMatch[1]) * 1000) + 750;
+  const code = Number(error?.status || error?.payload?.code || 0);
+  return code === 429 || /rate limit/i.test(message) ? 5750 : 0;
+}
+
+async function withTwexRetry(label, task) {
+  try {
+    return await task();
+  } catch (error) {
+    const delayMs = twexRetryDelayMs(error);
+    if (!delayMs) throw error;
+    log(`Twex ${label} rate-limited; retrying in ${Math.ceil(delayMs / 1000)}s.`);
+    await sleep(delayMs);
+    return task();
+  }
 }
 
 function shouldSkipScheduledFetch(state = {}) {
@@ -358,11 +383,11 @@ async function fetchMentionsWithTwexNotifications(state = {}) {
   const cookie = pumprCookie();
   if (!cookie) throw new Error("Set PUMPR_TWEX_X_COOKIE so TwexAPI can read @pumpr_fun mention notifications.");
   const notificationType = hasPendingConversation(state) ? "All" : "Mentions";
-  const payload = await fetchJson(TWEX_NOTIFICATIONS_URL, {
+  const payload = await withTwexRetry("notifications", () => fetchJson(TWEX_NOTIFICATIONS_URL, {
     method: "POST",
     headers: twexHeaders(),
     body: JSON.stringify({ cookie, type: notificationType })
-  });
+  }));
   const rows = Array.isArray(payload?.data) ? payload.data : [];
   const pendingIds = new Set(Object.keys(state.pendingByConversation || {}));
   return rows
@@ -387,7 +412,7 @@ async function fetchMentionsWithTwexSearch() {
         `"@${username}" -from:${username}`,
         `to:${username} -from:${username}`
       ];
-  const payload = await fetchJson(TWEX_ADVANCED_SEARCH_URL, {
+  const payload = await withTwexRetry("public search", () => fetchJson(TWEX_ADVANCED_SEARCH_URL, {
     method: "POST",
     headers: twexHeaders(),
     body: JSON.stringify({
@@ -395,7 +420,7 @@ async function fetchMentionsWithTwexSearch() {
       maxItems: MAX_MENTIONS,
       sortBy: "Latest"
     })
-  });
+  }));
   const rows = Array.isArray(payload?.data) ? payload.data : [];
   return rows
     .map((row) => normalizeTwexTweet(row))
@@ -437,6 +462,10 @@ async function fetchMentionsFromConfiguredSource(state) {
     } catch (error) {
       errors.push(`notifications: ${error.message || error}`);
       log(`Twex notifications unavailable: ${error.message || error}`);
+    }
+
+    if (TWEX_READ_DELAY_MS > 0) {
+      await sleep(TWEX_READ_DELAY_MS);
     }
 
     try {

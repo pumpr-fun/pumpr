@@ -38,6 +38,7 @@ jobs:
       X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES: ${{ vars.X_LAUNCH_ACTIVE_FETCH_BACKOFF_MINUTES || '0' }}
       X_LAUNCH_LOOP_INTERVAL_SECONDS: ${{ vars.X_LAUNCH_LOOP_INTERVAL_SECONDS || '30' }}
       X_LAUNCH_LOOP_RUNS: ${{ vars.X_LAUNCH_LOOP_RUNS || '9' }}
+      X_LAUNCH_TWEX_READ_DELAY_MS: ${{ vars.X_LAUNCH_TWEX_READ_DELAY_MS || '5500' }}
       PUMPR_X_USERNAME: ${{ vars.PUMPR_X_USERNAME || 'pumpr_fun' }}
       PUMPR_X_USER_ID: ${{ vars.PUMPR_X_USER_ID || '' }}
       X_LAUNCH_INTAKE_STATE_PATH: cache/x-launch-intake-state.json
