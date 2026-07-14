@@ -106,19 +106,38 @@ function fitFontSize(value = "", base = 42, min = 24, maxChars = 18) {
   return Math.max(min, Math.floor(base * (maxChars / length)));
 }
 
-function fieldBackplate(x, y, width, height, opacity = 0.84) {
-  return `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="10" fill="#efe5c6" fill-opacity="${opacity}" stroke="#d4c7a5" stroke-opacity="0.38" stroke-width="1"/>`;
+function engravedText({
+  x,
+  y,
+  text,
+  anchor = "middle",
+  fill = "#17140d",
+  family = "Georgia, 'Times New Roman', serif",
+  size = 34,
+  weight = 800,
+  letterSpacing = 0,
+  fontStyle = "",
+  stroke = "#070805",
+  strokeWidth = 0.42,
+  opacity = 0.94
+}) {
+  const content = escapeXml(text);
+  const letterAttr = letterSpacing ? ` letter-spacing="${letterSpacing}"` : "";
+  const styleAttr = fontStyle ? ` font-style="${fontStyle}"` : "";
+  const base = `x="${x}" y="${y}" text-anchor="${anchor}" font-family="${family}" font-size="${size}" font-weight="${weight}"${letterAttr}${styleAttr}`;
+  return `
+    <text ${base} fill="#f3ecd4" fill-opacity="0.28" transform="translate(1.1 1.1)">${content}</text>
+    <text ${base} fill="${fill}" fill-opacity="${opacity}" stroke="${stroke}" stroke-opacity="0.2" stroke-width="${strokeWidth}" paint-order="stroke">${content}</text>
+    <text ${base} fill="none" stroke="#f4ecd1" stroke-opacity="0.18" stroke-width="0.55" transform="translate(-0.7 -0.7)">${content}</text>`;
 }
 
 function sealOverlay({ x, y, ticker }) {
   const mono = monogramFor("", ticker).slice(0, 4);
   return `
     <g transform="translate(${x} ${y})">
-      <circle cx="0" cy="0" r="98" fill="#efe5c6" fill-opacity="0.96" stroke="#12692b" stroke-width="8"/>
-      <circle cx="0" cy="0" r="80" fill="none" stroke="#12692b" stroke-width="3" stroke-dasharray="5 5"/>
-      <text x="0" y="-10" text-anchor="middle" fill="#12692b" font-family="Georgia, serif" font-size="${fitFontSize(mono, 46, 30, 4)}" font-weight="900">${escapeXml(mono)}</text>
-      <text x="0" y="28" text-anchor="middle" fill="#12692b" font-family="Georgia, serif" font-size="22" font-weight="800">SERIES</text>
-      <text x="0" y="58" text-anchor="middle" fill="#12692b" font-family="Georgia, serif" font-size="26" font-weight="900">2026</text>
+      ${engravedText({ x: 0, y: -2, text: mono, fill: "#176d32", stroke: "#0d3519", size: fitFontSize(mono, 48, 30, 4), weight: 900 })}
+      ${engravedText({ x: 0, y: 36, text: "SERIES", fill: "#176d32", stroke: "#0d3519", size: 20, weight: 900, letterSpacing: 1.4 })}
+      ${engravedText({ x: 0, y: 64, text: "2026", fill: "#176d32", stroke: "#0d3519", size: 24, weight: 900 })}
     </g>`;
 }
 
@@ -135,7 +154,7 @@ function buildSignedBillSvg(options = {}) {
   const sourceImageUrl = cleanText(options.sourceImageUrl || "", 500);
   const chain = chainLabel(launchpad);
   const hasPortrait = /^https?:\/\//i.test(sourceImageUrl);
-  const caLine = tokenAddress ? `CA ${tokenAddress}` : "CA pending issuance";
+  const caLine = tokenAddress ? `CA ${tokenAddress}` : "";
   const xIdLine = creatorId ? `X ID ${creatorId}` : `X ID @${creatorHandle || "unknown"}`;
   const leftSerial = serial.replace(/-/g, "").slice(0, 10) || "PUMPR0001";
   const rightSerial = `${leftSerial.slice(0, 6)}${ticker.slice(0, 4)}`.slice(0, 12);
@@ -143,46 +162,35 @@ function buildSignedBillSvg(options = {}) {
   const nameSize = fitFontSize(name, 42, 25, 17);
   const tickerSize = fitFontSize(`$${ticker}`, 44, 27, 10);
   const signatureSize = fitFontSize(signer, 42, 26, 15);
-  const caSize = fitFontSize(caLine, 24, 14, 24);
+  const caSize = fitFontSize(caLine, 22, 13, 24);
 
   return `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" width="${BILL_TEMPLATE_WIDTH}" height="${BILL_TEMPLATE_HEIGHT}" viewBox="0 0 ${BILL_TEMPLATE_WIDTH} ${BILL_TEMPLATE_HEIGHT}">
   <defs>
     <clipPath id="portraitClip"><ellipse cx="887" cy="442" rx="184" ry="260"/></clipPath>
-    <filter id="inkShadow" x="-15%" y="-15%" width="130%" height="130%">
-      <feDropShadow dx="0" dy="1" stdDeviation="0.55" flood-color="#efe5c6" flood-opacity="0.55"/>
-    </filter>
   </defs>
 
   ${template ? `<image href="${template}" x="0" y="0" width="${BILL_TEMPLATE_WIDTH}" height="${BILL_TEMPLATE_HEIGHT}" preserveAspectRatio="none"/>` : `<rect width="${BILL_TEMPLATE_WIDTH}" height="${BILL_TEMPLATE_HEIGHT}" fill="#efe5c6"/>`}
   ${hasPortrait ? `<image href="${escapeXml(sourceImageUrl)}" x="703" y="257" width="368" height="520" preserveAspectRatio="xMidYMid slice" clip-path="url(#portraitClip)"/>` : ""}
 
-  <g font-family="Georgia, 'Times New Roman', serif" filter="url(#inkShadow)">
-    ${fieldBackplate(296, 222, 360, 70, 0.72)}
-    <text x="476" y="273" text-anchor="middle" fill="#146b2d" font-family="Courier New, monospace" font-size="46" font-weight="800" letter-spacing="4">${escapeXml(leftSerial)}</text>
-
-    ${fieldBackplate(1118, 222, 388, 70, 0.72)}
-    <text x="1312" y="273" text-anchor="middle" fill="#146b2d" font-family="Courier New, monospace" font-size="44" font-weight="800" letter-spacing="4">${escapeXml(rightSerial)}</text>
+  <g font-family="Georgia, 'Times New Roman', serif">
+    ${engravedText({ x: 472, y: 268, text: leftSerial, fill: "#146b2d", stroke: "#092512", family: "Courier New, monospace", size: 46, weight: 800, letterSpacing: 4 })}
+    ${engravedText({ x: 1312, y: 268, text: rightSerial, fill: "#146b2d", stroke: "#092512", family: "Courier New, monospace", size: 44, weight: 800, letterSpacing: 4 })}
 
     ${sealOverlay({ x: 1328, y: 457, ticker })}
 
-    ${fieldBackplate(282, 566, 430, 150, 0.96)}
-    <text x="497" y="628" text-anchor="middle" fill="#11170d" font-size="${nameSize}" font-weight="700">${escapeXml(name)}</text>
-    <text x="497" y="686" text-anchor="middle" fill="#11170d" font-family="Arial Black, Arial, sans-serif" font-size="${tickerSize}" font-weight="900">$${escapeXml(ticker)}</text>
+    ${engravedText({ x: 474, y: 606, text: name, fill: "#15120d", stroke: "#050504", size: nameSize, weight: 800 })}
+    ${engravedText({ x: 474, y: 662, text: `$${ticker}`, fill: "#15120d", stroke: "#050504", family: "Arial Black, Arial, sans-serif", size: tickerSize, weight: 900 })}
 
-    ${fieldBackplate(1184, 580, 356, 122, 0.96)}
-    <text x="1362" y="632" text-anchor="middle" fill="#11170d" font-family="Arial Black, Arial, sans-serif" font-size="${tickerSize}" font-weight="900">$${escapeXml(ticker)}</text>
-    <text x="1362" y="678" text-anchor="middle" fill="#11170d" font-family="Arial, sans-serif" font-size="20" font-weight="800">${escapeXml(chain)}</text>
+    ${engravedText({ x: 1360, y: 606, text: `$${ticker}`, fill: "#15120d", stroke: "#050504", family: "Arial Black, Arial, sans-serif", size: tickerSize, weight: 900 })}
+    ${engravedText({ x: 1360, y: 650, text: chain, fill: "#15120d", stroke: "#050504", family: "Arial, sans-serif", size: 20, weight: 800 })}
 
-    ${fieldBackplate(296, 704, 392, 88, 0.96)}
-    <text x="492" y="760" text-anchor="middle" fill="#10170d" font-family="Brush Script MT, Segoe Script, cursive" font-size="${signatureSize}">${escapeXml(signer)}</text>
+    ${engravedText({ x: 458, y: 706, text: signer, fill: "#15120d", stroke: "#050504", family: "Brush Script MT, Segoe Script, cursive", size: signatureSize, weight: 400 })}
 
-    ${fieldBackplate(1190, 704, 392, 88, 0.96)}
-    <text x="1386" y="760" text-anchor="middle" fill="#10170d" font-family="Brush Script MT, Segoe Script, cursive" font-size="42">Pump-r Reserve</text>
+    ${engravedText({ x: 1354, y: 704, text: "Pump-r Reserve", fill: "#15120d", stroke: "#050504", family: "Brush Script MT, Segoe Script, cursive", size: 42, weight: 400 })}
 
-    ${fieldBackplate(704, 790, 466, 62, 0.96)}
-    <text x="937" y="826" text-anchor="middle" fill="#11170d" font-family="Arial, sans-serif" font-size="${caSize}" font-weight="800">${escapeXml(caLine)}</text>
-    <text x="937" y="850" text-anchor="middle" fill="#11170d" font-family="Georgia, serif" font-size="16" font-style="italic">SPECIMEN - ${escapeXml(description)} - ${escapeXml(xIdLine)}</text>
+    ${caLine ? engravedText({ x: 930, y: 846, text: caLine, fill: "#15120d", stroke: "#050504", family: "Arial, sans-serif", size: caSize, weight: 800, opacity: 0.82 }) : ""}
+    ${engravedText({ x: 930, y: 864, text: `SPECIMEN - ${description} - ${xIdLine}`, fill: "#15120d", stroke: "#050504", family: "Georgia, serif", size: 14, weight: 500, fontStyle: "italic", opacity: 0.68 })}
   </g>
 </svg>`;
 }
