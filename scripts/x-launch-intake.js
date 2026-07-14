@@ -428,9 +428,13 @@ async function resolveLaunchImage(request = {}) {
 
 async function resolveReplyImage(request = {}, result = {}) {
   if (request.visualMode === "signed_bill") {
-    return generateSignedBillLaunchImage(request, result);
+    return result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "";
   }
-  return result.replyImageUrl || request.imageUrl || "";
+  return result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "";
+}
+
+function launchReplyMediaUrl(request = {}, result = {}) {
+  return String(result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "").trim();
 }
 
 async function fetchMentionsWithBrowser() {
@@ -1178,6 +1182,7 @@ async function launchPumpFun(request) {
   });
   const result = {
     ...finalized,
+    metadataImageUrl: imageUri || request.imageUrl || "",
     replyImageUrl: imageUri || request.imageUrl || ""
   };
   result.replyImageUrl = await resolveReplyImage(request, result).catch((error) => {
@@ -1298,6 +1303,7 @@ async function launchRobinhood(request) {
     signature: receipt?.hash || tx.hash,
     txHash: receipt?.hash || tx.hash,
     tokenUrl,
+    metadataImageUrl: imageUri || request.imageUrl || "",
     replyImageUrl: imageUri || request.imageUrl || "",
     explorerUrl: `${String(deployment.blockExplorerUrl || "https://robinhoodchain.blockscout.com").replace(/\/+$/, "")}/tx/${receipt?.hash || tx.hash}`,
     creator: signer.address
@@ -1392,7 +1398,7 @@ async function handleLaunchRequest(tweet, classification, state) {
   if (["launched_reply_failed", "reply_failed", "error_no_reply", "error"].includes(processedStatus(state, tweet.id))) {
     const existing = latestLaunchForTweet(state, tweet.id);
     if (existing) {
-      await postReply(tweet.id, launchSuccessReply(tweet, request, existing), existing.replyImageUrl || request.imageUrl || "");
+      await postReply(tweet.id, launchSuccessReply(tweet, request, existing), launchReplyMediaUrl(request, existing));
       appendQueue(request, "launched_reply_sent", {
         mint: existing.mint,
         token: existing.token,
@@ -1401,7 +1407,9 @@ async function handleLaunchRequest(tweet, classification, state) {
         txHash: existing.txHash,
         pumpfunUrl: existing.pumpfunUrl,
         tokenUrl: existing.tokenUrl,
-        explorerUrl: existing.explorerUrl
+        explorerUrl: existing.explorerUrl,
+        metadataImageUrl: existing.metadataImageUrl || existing.replyImageUrl || request.imageUrl || "",
+        replyImageUrl: launchReplyMediaUrl(request, existing)
       });
       return "launched";
     }
@@ -1457,7 +1465,8 @@ async function handleLaunchRequest(tweet, classification, state) {
     pumpfunUrl: result.pumpfunUrl,
     tokenUrl: result.tokenUrl,
     explorerUrl: result.explorerUrl,
-    replyImageUrl: result.replyImageUrl || request.imageUrl || ""
+    metadataImageUrl: result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "",
+    replyImageUrl: launchReplyMediaUrl(request, result)
   });
   state.launches.push({
     tweetId: tweet.id,
@@ -1470,11 +1479,12 @@ async function handleLaunchRequest(tweet, classification, state) {
     pumpfunUrl: result.pumpfunUrl,
     tokenUrl: result.tokenUrl,
     explorerUrl: result.explorerUrl,
-    replyImageUrl: result.replyImageUrl || request.imageUrl || "",
+    metadataImageUrl: result.metadataImageUrl || result.replyImageUrl || request.imageUrl || "",
+    replyImageUrl: launchReplyMediaUrl(request, result),
     at: new Date().toISOString()
   });
   try {
-    await postReply(tweet.id, launchSuccessReply(tweet, request, result), result.replyImageUrl || request.imageUrl || "");
+    await postReply(tweet.id, launchSuccessReply(tweet, request, result), launchReplyMediaUrl(request, result));
   } catch (error) {
     log(`Launch succeeded but reply failed for ${tweet.id}: ${error.message || error}`);
     rememberProcessed(state, tweet.id, "launched_reply_failed");
@@ -1558,6 +1568,7 @@ module.exports = {
   _test: {
     fallbackClassify,
     inferLaunchpad,
+    launchReplyMediaUrl,
     mergeClassification,
     shouldReprocessTweet,
     unsupportedLaunchpadReply
