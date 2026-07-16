@@ -11,6 +11,7 @@ const bs58 = require("bs58");
 const { ed25519 } = require("@noble/curves/ed25519");
 
 dotenv.config({ override: true });
+dotenv.config({ path: path.join(__dirname, "..", ".env.rwa"), override: true });
 
 const app = express();
 const PORT = Number(process.env.PORT || 4173);
@@ -257,6 +258,8 @@ const PARTICIPANTS_CACHE_TTL_MS = 30_000;
 const GECKO_POOL_CACHE_TTL_MS = 15_000;
 const GECKO_TRADES_CACHE_TTL_MS = 10_000;
 const GECKO_SPARKLINE_CACHE_TTL_MS = 45_000;
+const RWA_MARKETS_CACHE_TTL_MS = Math.max(60_000, Number(process.env.RWA_MARKETS_CACHE_TTL_MS || 10 * 60_000));
+const RWA_CHART_CACHE_TTL_MS = Math.max(60_000, Number(process.env.RWA_CHART_CACHE_TTL_MS || 15 * 60_000));
 const DEX_TOKEN_CACHE_TTL_MS = 4_000;
 const MAX_LAUNCH_READ_CONCURRENCY = 3;
 const MAX_BALANCE_READ_CONCURRENCY = 10;
@@ -295,6 +298,9 @@ const participantsCache = new Map();
 const geckoPoolCache = new Map();
 const geckoTradesCache = new Map();
 const geckoSparklineCache = new Map();
+const rwaMarketsCache = new Map();
+const rwaChartCache = new Map();
+const rwaProtocolsCache = new Map();
 const dexTokenCache = new Map();
 const geckoIndexedSticky = new Set();
 const pairTradesCache = new Map();
@@ -12194,6 +12200,169 @@ app.get("/api/launch-availability", async (req, res) => {
   }
 });
 
+function coinGeckoHeaders() {
+  const apiKey = String(process.env.COINGECKO_DEMO_API_KEY || "").trim();
+  return apiKey ? { "x-cg-demo-api-key": apiKey } : {};
+}
+
+function classifyRwaAsset(row = {}) {
+  const text = `${row.id || ""} ${row.name || ""} ${row.symbol || ""}`.toLowerCase();
+  const groups = {
+    "Tokenized stocks": ["tesla", "nvidia", "apple", "amazon", "microsoft", "coinbase", "sp500", "s&p", "stock", "equity", "xstock"],
+    "Real estate": ["real-estate", "realty", "property", "landshare", "parcl", "lofty", "estate"],
+    "Private credit": ["heloc", "credit", "invoice", "centrifuge", "maple", "goldfinch", "clearpool"],
+    Commodities: ["gold", "silver", "platinum", "commodity", "oil", "uranium", "paxg", "xaut"],
+    Treasuries: ["treasury", "t-bill", "tbill", "buidl", "usyc", "usdy", "ousg", "ustb", "eutbl", "money-market", "benji"],
+    "Stable assets": ["stablecoin", "stable", "usd0", "usual-usd", "mountain-protocol", "ondo-dollar"]
+  };
+  for (const [category, needles] of Object.entries(groups)) {
+    if (needles.some((needle) => text.includes(needle))) return category;
+  }
+  return "Infrastructure";
+}
+
+function classifyRwaProtocol(row = {}) {
+  const text = `${row.slug || ""} ${row.name || ""}`.toLowerCase();
+  if (["realt-tokens", "lofty", "estate-protocol", "realtyx", "landshare", "reental"].some((slug) => text.includes(slug))) return "Real estate";
+  if (["gold", "silver", "paxos", "commodity"].some((word) => text.includes(word))) return "Commodities";
+  if (["credit", "maple", "goldfinch", "centrifuge", "hastra", "reinsurance"].some((word) => text.includes(word))) return "Private credit";
+  if (["stock", "equity", "global-markets"].some((word) => text.includes(word))) return "Tokenized stocks";
+  if (["stable", "usdtb", "usd0", "usual"].some((word) => text.includes(word))) return "Stable assets";
+  if (["treasury", "buidl", "usyc", "yield-assets", "spiko", "benji", "ustb", "wisdomtree", "anemoy"].some((word) => text.includes(word))) return "Treasuries";
+  return "Other RWA";
+}
+
+async function fetchCoinGeckoJson(pathname) {
+  const response = await fetch(`https://api.coingecko.com/api/v3${pathname}`, {
+    headers: { accept: "application/json", ...coinGeckoHeaders() },
+    signal: AbortSignal.timeout(12_000)
+  });
+  if (!response.ok) throw new Error(`CoinGecko returned HTTP ${response.status}`);
+  return response.json();
+}
+
+app.get("/api/rwa/markets", async (req, res) => {
+  try {
+    const limit = Math.max(10, Math.min(100, Number(req.query.limit || 50)));
+    const builder = async () => {
+      const rows = await fetchCoinGeckoJson(
+        `/coins/markets?vs_currency=usd&category=real-world-assets-rwa&order=market_cap_desc&per_page=${limit}&page=1&sparkline=true&price_change_percentage=1h,24h,7d,30d`
+      );
+      const assets = (Array.isArray(rows) ? rows : []).map((row) => ({
+        id: String(row.id || ""),
+        symbol: String(row.symbol || "").toUpperCase(),
+        name: String(row.name || ""),
+        image: String(row.image || ""),
+        price: Number(row.current_price || 0),
+        marketCap: Number(row.market_cap || 0),
+        marketCapRank: Number(row.market_cap_rank || 0),
+        volume24h: Number(row.total_volume || 0),
+        high24h: Number(row.high_24h || 0),
+        low24h: Number(row.low_24h || 0),
+        change1h: Number(row.price_change_percentage_1h_in_currency || 0),
+        change24h: Number(row.price_change_percentage_24h_in_currency ?? row.price_change_percentage_24h ?? 0),
+        change7d: Number(row.price_change_percentage_7d_in_currency || 0),
+        change30d: Number(row.price_change_percentage_30d_in_currency || 0),
+        ath: Number(row.ath || 0),
+        athChange: Number(row.ath_change_percentage || 0),
+        sparkline: (row.sparkline_in_7d?.price || []).map(Number).filter(Number.isFinite),
+        updatedAt: row.last_updated || null,
+        category: classifyRwaAsset(row)
+      }));
+      const categories = assets.reduce((counts, asset) => {
+        counts[asset.category] = (counts[asset.category] || 0) + 1;
+        return counts;
+      }, {});
+      return {
+        assets,
+        categories,
+        stats: {
+          marketCap: assets.reduce((sum, asset) => sum + asset.marketCap, 0),
+          volume24h: assets.reduce((sum, asset) => sum + asset.volume24h, 0),
+          gainers: assets.filter((asset) => asset.change24h > 0).length,
+          tracked: assets.length
+        },
+        updatedAt: new Date().toISOString(),
+        source: "CoinGecko"
+      };
+    };
+    const payload = req.query.fresh === "1" ? await builder() : await withCache(rwaMarketsCache, `markets:${limit}`, RWA_MARKETS_CACHE_TTL_MS, builder);
+    res.set("Cache-Control", "public, max-age=60, s-maxage=600, stale-while-revalidate=1800");
+    res.json(payload);
+  } catch (error) {
+    res.status(502).json({ error: error?.message || "RWA market data is temporarily unavailable" });
+  }
+});
+
+app.get("/api/rwa/chart/:id", async (req, res) => {
+  try {
+    const id = String(req.params.id || "").trim().toLowerCase();
+    if (!/^[a-z0-9-]{1,100}$/.test(id)) return res.status(400).json({ error: "Invalid asset id" });
+    const allowedDays = new Set(["1", "7", "30", "365"]);
+    const days = allowedDays.has(String(req.query.days)) ? String(req.query.days) : "7";
+    const payload = await withCache(rwaChartCache, `${id}:${days}`, RWA_CHART_CACHE_TTL_MS, async () => {
+      const data = await fetchCoinGeckoJson(`/coins/${encodeURIComponent(id)}/market_chart?vs_currency=usd&days=${days}`);
+      return {
+        id,
+        days: Number(days),
+        prices: (data.prices || []).map(([time, value]) => [Number(time), Number(value)]).filter((point) => point.every(Number.isFinite)),
+        marketCaps: (data.market_caps || []).map(([time, value]) => [Number(time), Number(value)]).filter((point) => point.every(Number.isFinite)),
+        volumes: (data.total_volumes || []).map(([time, value]) => [Number(time), Number(value)]).filter((point) => point.every(Number.isFinite)),
+        source: "CoinGecko"
+      };
+    });
+    res.set("Cache-Control", "public, max-age=60, s-maxage=900, stale-while-revalidate=1800");
+    res.json(payload);
+  } catch (error) {
+    res.status(502).json({ error: error?.message || "Chart data is temporarily unavailable" });
+  }
+});
+
+app.get("/api/rwa/protocols", async (_req, res) => {
+  try {
+    const payload = await withCache(rwaProtocolsCache, "defillama", RWA_MARKETS_CACHE_TTL_MS, async () => {
+      const [protocolResponse, yieldResponse] = await Promise.all([
+        fetch("https://api.llama.fi/protocols", { signal: AbortSignal.timeout(15_000) }),
+        fetch("https://yields.llama.fi/pools", { signal: AbortSignal.timeout(15_000) })
+      ]);
+      if (!protocolResponse.ok) throw new Error(`DefiLlama protocols returned HTTP ${protocolResponse.status}`);
+      const protocolRows = await protocolResponse.json();
+      const yieldRows = yieldResponse.ok ? await yieldResponse.json() : { data: [] };
+      const yieldsByProject = new Map();
+      for (const pool of yieldRows.data || []) {
+        const key = String(pool.project || "").toLowerCase();
+        if (!key) continue;
+        const current = yieldsByProject.get(key);
+        if (!current || Number(pool.tvlUsd || 0) > Number(current.tvlUsd || 0)) yieldsByProject.set(key, pool);
+      }
+      const allProtocols = (Array.isArray(protocolRows) ? protocolRows : [])
+        .filter((row) => String(row.category || "").toUpperCase() === "RWA")
+        .map((row) => {
+          const pool = yieldsByProject.get(String(row.slug || "").toLowerCase());
+          return {
+            id: String(row.slug || ""), name: String(row.name || ""), category: classifyRwaProtocol(row),
+            tvl: Number(row.tvl || 0), change1d: Number(row.change_1d || 0), change7d: Number(row.change_7d || 0),
+            chains: Array.isArray(row.chains) ? row.chains.slice(0, 5) : [], url: String(row.url || ""),
+            logo: String(row.logo || ""), apy: Number.isFinite(Number(pool?.apy)) ? Number(pool.apy) : null,
+            yieldSymbol: String(pool?.symbol || ""), source: "DefiLlama"
+          };
+        })
+        .filter((row) => row.tvl > 0)
+        .sort((a, b) => b.tvl - a.tvl);
+      const protocols = allProtocols.slice(0, 80);
+      for (const row of allProtocols) {
+        if (!["Real estate", "Stable assets"].includes(row.category)) continue;
+        if (!protocols.some((current) => current.id === row.id)) protocols.push(row);
+      }
+      return { protocols, updatedAt: new Date().toISOString(), source: "DefiLlama" };
+    });
+    res.set("Cache-Control", "public, max-age=60, s-maxage=600, stale-while-revalidate=1800");
+    res.json(payload);
+  } catch (error) {
+    res.status(502).json({ error: error?.message || "RWA protocol data is temporarily unavailable" });
+  }
+});
+
 app.get("/api/health", async (req, res) => {
   try {
     const deployment = loadDeploymentConfig();
@@ -15303,6 +15472,10 @@ app.get(["/go", "/go/:bountyId"], (_req, res) => {
 
 app.get(["/alpha", "/alpha/:alphaId"], (_req, res) => {
   res.sendFile(path.join(FRONTEND_DIR, "alpha.html"));
+});
+
+app.get("/rwa", (_req, res) => {
+  res.sendFile(path.join(FRONTEND_DIR, "rwa.html"));
 });
 
 app.get(["/agents", "/agents/:agentId"], (_req, res) => {

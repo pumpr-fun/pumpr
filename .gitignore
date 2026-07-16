@@ -2,6 +2,7 @@ node_modules/
 cache/
 coverage/
 .env
+.env.rwa
 frontend/.DS_Store
 *.log
 *.out.log

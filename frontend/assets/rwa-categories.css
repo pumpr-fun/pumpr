@@ -1,0 +1,67 @@
+.rwa-categories {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 16px 22px;
+  border-bottom: 1px solid var(--rwa-line);
+  scrollbar-width: none;
+}
+.rwa-categories::-webkit-scrollbar { display: none; }
+.rwa-categories button {
+  flex: 0 0 auto;
+  border: 1px solid #2b302a;
+  background: #0b0e0b;
+  color: #858d84;
+  border-radius: 999px;
+  padding: 9px 13px;
+  font: 700 11px Inter, sans-serif;
+  cursor: pointer;
+}
+.rwa-categories button:hover { border-color: #485344; color: #d8ded5; }
+.rwa-categories button.active { border-color: #719f59; background: #202a1c; color: #cfffba; }
+.rwa-categories button span { margin-left: 5px; color: #5f685e; }
+.rwa-category-badge {
+  display: inline-flex;
+  padding: 5px 8px;
+  border: 1px solid #30372e;
+  border-radius: 999px;
+  background: #181c17;
+  color: #aab2a7;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+@media (max-width: 600px) { .rwa-categories { padding: 13px 14px; } }
+.rwa-table-wrap { max-height: 760px; }
+.rwa-table thead { position: sticky; top: 0; z-index: 2; background: #111411; }
+.rwa-table td { padding-top: 13px; padding-bottom: 13px; }
+.rwa-pagination { min-height: 58px; padding: 11px 24px; border-top: 1px solid var(--rwa-line); display: flex; align-items: center; justify-content: space-between; color: #6f776e; font-size: 10px; }
+.rwa-pagination > div { display: flex; align-items: center; gap: 10px; }
+.rwa-pagination button { border: 1px solid #2d332b; background: #161a15; color: #aab2a8; padding: 8px 11px; border-radius: 8px; font: 700 10px Inter; cursor: pointer; }
+.rwa-pagination button:hover:not(:disabled) { border-color: #668a54; color: #d8ffc6; }
+.rwa-pagination button:disabled { opacity: .35; cursor: default; }
+.rwa-pagination[hidden] { display: none; }
+.rwa-row-source { display: block; margin-top: 5px; color: #596159; font-size: 8px; }
+.rwa-value-label { display: block; color: #626b61; font-size: 7px; letter-spacing: .08em; margin-bottom: 3px; }
+.rwa-no-chart { color: #626b61; border: 1px solid #293027; border-radius: 999px; padding: 5px 9px; font-size: 8px; }
+.rwa-protocol-board { margin-top: 30px; border: 1px solid var(--rwa-line); border-radius: 18px; background: var(--rwa-panel); overflow: hidden; }
+.rwa-protocol-head { padding: 24px 26px 18px; display: flex; justify-content: space-between; align-items: flex-start; }
+.rwa-protocol-head h2 { margin: 6px 0; font-size: 22px; }
+.rwa-protocol-head p { margin: 0; color: #70786f; font-size: 11px; }
+.rwa-defi-source { color: #74806f; border: 1px solid #2d342b; border-radius: 999px; padding: 7px 10px; font-size: 10px; }
+.rwa-protocol-tabs { display: flex; gap: 7px; overflow-x: auto; padding: 0 26px 18px; scrollbar-width: none; }
+.rwa-protocol-tabs button { flex: 0 0 auto; border: 1px solid #2b302a; background: #0b0e0b; color: #7e867d; border-radius: 8px; padding: 8px 10px; font: 700 10px Inter; cursor: pointer; }
+.rwa-protocol-tabs button.active { background: #263022; border-color: #668a54; color: #d8ffc6; }
+.rwa-protocol-grid { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--rwa-line); }
+.rwa-protocol-card { padding: 19px; border-right: 1px solid #20241f; border-bottom: 1px solid #20241f; color: inherit; text-decoration: none; transition: .15s; min-width: 0; }
+.rwa-protocol-card:hover { background: #171b16; }
+.rwa-protocol-name { display: flex; align-items: center; gap: 10px; }
+.rwa-protocol-name img { width: 34px; height: 34px; border-radius: 9px; object-fit: contain; background: #20241f; }
+.rwa-protocol-name strong { display: block; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rwa-protocol-name small { color: #778076; font-size: 9px; }
+.rwa-protocol-values { display: flex; justify-content: space-between; gap: 10px; margin-top: 17px; }
+.rwa-protocol-values small { display: block; color: #626a61; font-size: 8px; letter-spacing: .09em; margin-bottom: 5px; }
+.rwa-protocol-values strong { font-size: 14px; }
+.rwa-protocol-chains { color: #697168; font-size: 9px; margin-top: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 900px) { .rwa-protocol-grid { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 600px) { .rwa-protocol-grid { grid-template-columns: 1fr; } .rwa-protocol-head { padding: 20px 15px; } .rwa-protocol-tabs { padding: 0 15px 15px; } }

@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pump-r.fun | RWA Board</title>
+  <link rel="icon" type="image/png" href="/assets/favicon.png" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/assets/site.css?v=20260711airisymbols" />
+  <link rel="stylesheet" href="/assets/rwa.css?v=20260716rwa1" />
+  <link rel="stylesheet" href="/assets/rwa-categories.css?v=20260716rwa2" />
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" id="appSidebar">
+      <div class="sidebar-top">
+        <a class="logo" href="/"><img class="logo-mark" src="/assets/pump-r-logo.png" alt="Pump-r logo" /><span class="logo-title"><span class="logo-name">Pump-r</span><span class="logo-sep">.</span><span class="logo-tld">fun</span></span></a>
+        <button class="sidebar-toggle" id="sidebarToggle" type="button" aria-label="Collapse sidebar" aria-expanded="true"><svg viewBox="0 0 20 12"><rect x="1.5" y="1" width="1.5" height="10" rx=".75"></rect><rect x="17" y="1" width="1.5" height="10" rx=".75"></rect><path d="M11.2 3.2 8.2 6l3 2.8"></path></svg></button>
+      </div>
+      <nav class="side-nav"><a class="side-link" href="/"><span class="side-icon"></span><span class="side-link-label">Home</span></a></nav>
+      <a class="side-create-btn" href="/create">Create</a>
+      <div class="side-footer"><span id="networkChip">Market data</span><span id="factoryChip">CoinGecko</span></div>
+    </aside>
+
+    <main class="main-pane rwa-pane">
+      <header class="rwa-topbar">
+        <div class="rwa-search"><svg viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-4-4"></path></svg><input id="rwaSearch" placeholder="Search real-world assets" /></div>
+        <div class="rwa-live"><i></i><span id="rwaUpdated">Loading market</span></div>
+      </header>
+
+      <section class="rwa-content">
+        <div class="rwa-hero">
+          <div><span class="rwa-kicker">ONCHAIN MARKETS</span><h1>Real-world assets,<br><em>tracked live.</em></h1><p>Explore tokenized commodities, treasuries, credit and more—all in one market board.</p></div>
+          <div class="rwa-orbit" aria-hidden="true"><span>RWA</span><i></i><i></i><i></i></div>
+        </div>
+
+        <section class="rwa-stats" aria-label="RWA market overview">
+          <article><small>TRACKED MARKET CAP</small><strong id="rwaMarketCap">—</strong><span>Top listed RWA assets</span></article>
+          <article><small>24H VOLUME</small><strong id="rwaVolume">—</strong><span>Across tracked markets</span></article>
+          <article><small>ASSETS TRACKED</small><strong id="rwaTracked">—</strong><span>Live market listings</span></article>
+          <article><small>24H ADVANCING</small><strong id="rwaGainers">—</strong><span>Assets trading higher</span></article>
+        </section>
+
+        <section class="rwa-board">
+          <nav class="rwa-categories" id="rwaCategories" aria-label="RWA categories">
+            <button class="active" data-category="All">All <span></span></button>
+            <button data-category="Treasuries">Treasuries <span></span></button>
+            <button data-category="Commodities">Commodities <span></span></button>
+            <button data-category="Private credit">Private Credit <span></span></button>
+            <button data-category="Real estate">Real Estate <span></span></button>
+            <button data-category="Tokenized stocks">Tokenized Stocks <span></span></button>
+            <button data-category="Stable assets">Stable Assets <span></span></button>
+            <button data-category="Infrastructure">Infrastructure <span></span></button>
+            <button data-category="Other RWA">Other RWA <span></span></button>
+          </nav>
+          <div class="rwa-board-head"><div><span class="rwa-kicker">MARKET BOARD</span><h2>Top RWA assets</h2></div><div class="rwa-controls"><div class="rwa-tabs" id="rwaTabs"><button class="active" data-sort="marketCap">Market cap</button><button data-sort="change24h">Gainers</button><button data-sort="volume24h">Volume</button></div><button id="rwaRefresh" class="rwa-refresh">↻ Refresh</button></div></div>
+          <div class="rwa-table-wrap">
+            <table class="rwa-table"><thead><tr><th># / Asset or protocol</th><th>Category / Source</th><th>Price</th><th>24h</th><th>7d chart</th><th>Market cap / TVL</th><th>Volume / APY</th></tr></thead><tbody id="rwaRows"><tr><td colspan="7"><div class="rwa-loading">Loading the RWA market…</div></td></tr></tbody></table>
+          </div>
+          <div class="rwa-pagination" id="rwaPagination">
+            <span id="rwaPageInfo">Showing 0 assets</span>
+            <div><button id="rwaPagePrev" type="button">← Previous</button><span id="rwaPageNumber">1 / 1</span><button id="rwaPageNext" type="button">Next →</button></div>
+          </div>
+          <div id="rwaEmpty" class="rwa-empty" hidden>No assets match your search.</div>
+          <footer class="rwa-source">Market data by <a href="https://www.coingecko.com/en/categories/real-world-assets-rwa" target="_blank" rel="noopener noreferrer">CoinGecko</a> · Protocol TVL by <a href="https://defillama.com/rwa" target="_blank" rel="noopener noreferrer">DeFiLlama</a>. Market cap and TVL are labeled separately.</footer>
+        </section>
+      </section>
+    </main>
+  </div>
+
+  <div id="rwaChartModal" class="rwa-modal" aria-hidden="true">
+    <section class="rwa-chart-card" role="dialog" aria-modal="true" aria-labelledby="rwaChartTitle">
+      <header><div class="rwa-chart-asset"><img id="rwaChartImage" alt="" /><div><small id="rwaChartSymbol"></small><h2 id="rwaChartTitle">Asset chart</h2></div></div><button id="rwaChartClose" aria-label="Close chart">×</button></header>
+      <div class="rwa-chart-price"><strong id="rwaChartPrice">—</strong><span id="rwaChartChange">—</span></div>
+      <div class="rwa-range" id="rwaRange"><button data-days="1">24H</button><button class="active" data-days="7">7D</button><button data-days="30">30D</button><button data-days="365">1Y</button></div>
+      <div class="rwa-canvas-wrap"><canvas id="rwaChartCanvas"></canvas><div id="rwaTooltip" class="rwa-tooltip" hidden></div><div id="rwaChartLoading" class="rwa-chart-loading">Loading chart…</div></div>
+      <footer><span>Historical USD price</span><span>Source: CoinGecko</span></footer>
+    </section>
+  </div>
+  <script src="/js/sidebar.js?v=20260716rwa1"></script>
+  <script type="module" src="/js/auth-bootstrap.js?v=20260716auth1"></script>
+  <script type="module" src="/js/rwa.js?v=20260716rwa8"></script>
+</body>
+</html>
