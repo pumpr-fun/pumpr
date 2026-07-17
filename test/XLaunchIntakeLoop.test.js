@@ -46,6 +46,25 @@ describe("X launch intake loop", function () {
     expect(intakeTest.shouldReprocessTweet(tweet, state)).to.equal(true);
   });
 
+  it("never reprocesses a tweet that already has a recorded launch", function () {
+    const tweet = {
+      id: "2078148349828469070",
+      text: "@pumpr_launch create token on pump fun name nftguy ticker nftguy"
+    };
+    const state = {
+      processedTweetIds: [tweet.id],
+      processedStatusByTweetId: {
+        [tweet.id]: { status: "launched_reply_failed" }
+      },
+      launches: [{ tweetId: tweet.id, mint: "already-launched" }]
+    };
+
+    expect(intakeTest.shouldReprocessTweet(tweet, state)).to.equal(false);
+
+    delete state.processedStatusByTweetId[tweet.id];
+    expect(intakeTest.shouldReprocessTweet(tweet, state)).to.equal(false);
+  });
+
   it("extracts a mention from X browser GraphQL responses", function () {
     const payload = {
       data: {

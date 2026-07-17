@@ -29,7 +29,9 @@ permissions:
 
 concurrency:
   group: x-launch-intake
-  cancel-in-progress: true
+  # Never cancel a worker after it may have submitted an on-chain launch but
+  # before its intake state has been saved. Replacement workers wait instead.
+  cancel-in-progress: false
 
 jobs:
   intake:

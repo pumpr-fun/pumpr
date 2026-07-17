@@ -230,12 +230,14 @@ function latestLaunchForTweet(state, tweetId) {
 
 function shouldReprocessTweet(tweet, state) {
   const status = processedStatus(state, tweet.id);
+  // The launch ledger is the strongest idempotency signal, including for
+  // state restored from an older/incomplete status record.
+  if (latestLaunchForTweet(state, tweet.id)) {
+    return false;
+  }
   if (!status) {
     const fallback = fallbackClassify(tweet, {});
     return Boolean(fallback.isLaunchRequest && fallback.launchpad && fallback.name && fallback.ticker);
-  }
-  if (["launched_reply_failed", "reply_failed", "error_no_reply", "error"].includes(status) && latestLaunchForTweet(state, tweet.id)) {
-    return true;
   }
   if (status === "ignored") {
     const fallback = fallbackClassify(tweet, {});
@@ -1237,8 +1239,7 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
   if (!cookie) throw new Error("Set PUMPR_X_COOKIE or PUMPR_TWEX_X_COOKIE so TwexAPI can post from @pumpr_launch.");
   const existing = await findExistingReplyWithBrowser(tweetId, text);
   if (existing?.id) {
-    const verified = await verifyTweetOnX(existing.id, process.env.PUMPR_X_USERNAME || "pumpr_launch");
-    log(`Found and verified existing launch reply: https://x.com/${verified.authorUsername || "pumpr_launch"}/status/${existing.id}`);
+    log(`Found existing launch reply: https://x.com/${process.env.PUMPR_X_USERNAME || "pumpr_launch"}/status/${existing.id}`);
     return { ok: true, method: "browser_reply_recovery", tweetId: existing.id };
   }
   const payload = {
@@ -1277,12 +1278,23 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
     }
   }
   if (!createdId) throw new Error("TwexAPI accepted the reply request but its tweet ID could not be recovered from the X thread.");
-  const verified = await verifyTweetOnX(createdId, process.env.PUMPR_X_USERNAME || "pumpr_launch");
-  log(`TwexAPI reply posted and verified: https://x.com/${verified.authorUsername || "pumpr_launch"}/status/${createdId}`);
+  // TwexAPI has accepted the post and returned its created tweet ID. X's public
+  // syndication endpoint often returns HTTP 200 with an empty/stale body while
+  // a new tweet propagates. That lag must not turn a successful post into a
+  // retry, because retrying creates duplicate replies.
+  let verificationPending = false;
+  try {
+    const verified = await verifyTweetOnX(createdId, process.env.PUMPR_X_USERNAME || "pumpr_launch");
+    log(`TwexAPI reply posted and verified: https://x.com/${verified.authorUsername || "pumpr_launch"}/status/${createdId}`);
+  } catch (error) {
+    verificationPending = true;
+    log(`TwexAPI reply ${createdId} was accepted; public X verification is pending: ${cleanText(error.message || error, 220)}`);
+  }
   return {
     ok: true,
     method: "twexapi",
-    tweetId: createdId
+    tweetId: createdId,
+    verificationPending
   };
 }
 
@@ -1707,6 +1719,10 @@ async function handleLaunchRequest(tweet, classification, state) {
     replyImageUrl: launchReplyMediaUrl(request, result),
     at: new Date().toISOString()
   });
+  // Persist the irreversible launch before doing the non-critical X reply.
+  // A reply/API failure or process interruption must never lose launch memory.
+  rememberProcessed(state, tweet.id, "launched_reply_pending");
+  writeState(state);
   try {
     await postReply(tweet.id, launchSuccessReply(tweet, request, result), launchReplyMediaUrl(request, result));
   } catch (error) {
