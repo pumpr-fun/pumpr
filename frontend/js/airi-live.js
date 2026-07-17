@@ -139,36 +139,31 @@ const dom = {
 
 // Make terminal focusable and add keyboard scroll support
 if (dom.terminal) {
+  // Ensure terminal is focusable and has appropriate ARIA roles
   dom.terminal.setAttribute("tabindex", "0");
   dom.terminal.setAttribute("role", "log");
   dom.terminal.setAttribute("aria-live", "polite");
   dom.terminal.setAttribute("aria-atomic", "false");
   dom.terminal.setAttribute("aria-label", "Airi live terminal output");
   dom.terminal.style.outline = "none";
-  dom.terminal.addEventListener("focus", () => {
-    dom.terminal.style.outline = "3px solid #67f2aa";
-    dom.terminal.style.outlineOffset = "4px";
-  });
-  dom.terminal.addEventListener("blur", () => {
-    dom.terminal.style.outline = "none";
-  });
+
+  // Keyboard navigation for terminal scroll
   dom.terminal.addEventListener("keydown", (event) => {
     const el = dom.terminal;
     if (!el) return;
-    // Use slightly larger scroll increments for smoother keyboard scroll
-    const lineHeight = 28; // increased line height for smoother keyboard scrolling
-    const pageScroll = Math.floor(el.clientHeight * 0.85); // slightly larger page scroll for better navigation
+    const lineHeight = 28; // line height for keyboard scroll
+    const pageScroll = Math.floor(el.clientHeight * 0.85); // page scroll amount
     let handled = false;
     switch (event.key) {
       case "ArrowDown":
-      case "Down": // IE/Edge legacy
+      case "Down":
         if (el.scrollTop < el.scrollHeight - el.clientHeight) {
           el.scrollTop = Math.min(el.scrollHeight - el.clientHeight, el.scrollTop + lineHeight);
           handled = true;
         }
         break;
       case "ArrowUp":
-      case "Up": // IE/Edge legacy
+      case "Up":
         if (el.scrollTop > 0) {
           el.scrollTop = Math.max(0, el.scrollTop - lineHeight);
           handled = true;
@@ -199,8 +194,7 @@ if (dom.terminal) {
         }
         break;
       case " ":
-      case "Spacebar": // IE/Edge legacy
-        // Spacebar scrolls down, Shift+Space scrolls up
+      case "Spacebar":
         if (event.shiftKey) {
           if (el.scrollTop > 0) {
             el.scrollTop = Math.max(0, el.scrollTop - pageScroll);
@@ -216,24 +210,22 @@ if (dom.terminal) {
       case "Tab":
         // Allow tab to move focus out of terminal
         break;
-      case "PageLeft":
-      case "PageRight":
-        // Support additional page scroll keys if needed
-        break;
       default:
-        return; // Ignore other keys
+        return;
     }
     if (handled) {
       event.preventDefault();
     }
   });
 
-  // Add ARIA attributes for accessibility
-  dom.terminal.setAttribute("tabindex", "0");
-  dom.terminal.setAttribute("role", "log");
-  dom.terminal.setAttribute("aria-live", "polite");
-  dom.terminal.setAttribute("aria-atomic", "false");
-  dom.terminal.setAttribute("aria-label", "Airi live terminal output");
+  // Focus and blur outlines for keyboard users
+  dom.terminal.addEventListener("focus", () => {
+    dom.terminal.style.outline = "3px solid #67f2aa";
+    dom.terminal.style.outlineOffset = "4px";
+  });
+  dom.terminal.addEventListener("blur", () => {
+    dom.terminal.style.outline = "none";
+  });
 
   // Add aria-label and role for progress bar for screen readers
   if (dom.progress) {
@@ -242,11 +234,9 @@ if (dom.terminal) {
     dom.progress.setAttribute("aria-valuemin", "0");
     dom.progress.setAttribute("aria-valuemax", "100");
     dom.progress.setAttribute("aria-valuenow", String(Math.max(8, state.progress)));
-    dom.progress.setAttribute("tabindex", "0"); // Make progress bar focusable for screen readers
-    // Add aria-live and aria-atomic for dynamic updates
+    dom.progress.setAttribute("tabindex", "0");
     dom.progress.setAttribute("aria-live", "polite");
     dom.progress.setAttribute("aria-atomic", "true");
-    // Add role and aria-live to the progress bar container for screen readers
     if (dom.progress.parentElement) {
       dom.progress.parentElement.setAttribute("role", "region");
       dom.progress.parentElement.setAttribute("aria-live", "polite");
@@ -254,10 +244,10 @@ if (dom.terminal) {
     }
   }
 
-  // Add keyboard shortcut hint for terminal focus
+  // Keyboard shortcut hint for terminal focus
   dom.terminal.setAttribute("title", "Terminal output. Use arrow keys, Page Up/Down, Home/End, and Space to scroll.");
 
-  // Add aria-describedby for instructions
+  // Hidden instructions for screen readers
   const instructionsId = "airiLiveTerminalInstructions";
   let instructionsEl = document.getElementById(instructionsId);
   if (!instructionsEl) {
@@ -276,7 +266,7 @@ if (dom.terminal) {
   }
   dom.terminal.setAttribute("aria-describedby", instructionsId);
 
-  // Add role and aria-live to the progress bar container for screen readers
+  // Ensure progress bar has ARIA roles
   if (dom.progress) {
     dom.progress.setAttribute("role", "progressbar");
     dom.progress.setAttribute("aria-live", "polite");
