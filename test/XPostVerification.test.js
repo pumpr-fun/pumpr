@@ -13,6 +13,8 @@ describe("X post verification", function () {
       data: { create_tweet: { tweet_results: { result: { rest_id: "2078152123569656154" } } } }
     })).to.equal("2078152123569656154");
     expect(createdTweetId({ data: { tweetId: "2078152123569656154" } })).to.equal("2078152123569656154");
+    expect(createdTweetId({ response: { posted_tweet: { result: { restId: "2078152123569656155" } } } })).to.equal("2078152123569656155");
+    expect(createdTweetId({ data: { user_id: "1814688188352368640", code: 200 } })).to.equal("");
   });
 
   it("verifies the tweet ID and posting account on public X", async function () {

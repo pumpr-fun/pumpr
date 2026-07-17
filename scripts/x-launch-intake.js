@@ -133,6 +133,18 @@ function cleanText(value, max = 500) {
     .slice(0, max);
 }
 
+function responseShape(value, prefix = "", depth = 0, paths = []) {
+  if (!value || typeof value !== "object" || depth > 5 || paths.length >= 40) return paths;
+  for (const [key, child] of Object.entries(value)) {
+    if (/cookie|token|authorization|proxy|secret/i.test(key)) continue;
+    const pathName = prefix ? `${prefix}.${key}` : key;
+    paths.push(pathName);
+    if (child && typeof child === "object") responseShape(child, pathName, depth + 1, paths);
+    if (paths.length >= 40) break;
+  }
+  return paths;
+}
+
 function stripMentions(text = "") {
   return cleanText(text.replace(/@\w+/g, " "), 800);
 }
@@ -1254,6 +1266,9 @@ async function replyWithTwexApi(tweetId, text, mediaUrl = "") {
     throw new Error(`TwexAPI reply failed: ${cleanText(detail, 220)}`);
   }
   let createdId = createdTweetId(body);
+  if (!createdId) {
+    log(`TwexAPI success response contained no tweet ID. code=${cleanText(body?.code || response.status, 20)} msg="${cleanText(body?.msg || body?.message || "", 120)}" fields=${responseShape(body).join(",") || "none"}`);
+  }
   if (!createdId) {
     for (let attempt = 1; attempt <= 5 && !createdId; attempt += 1) {
       await new Promise((resolve) => setTimeout(resolve, 3000));

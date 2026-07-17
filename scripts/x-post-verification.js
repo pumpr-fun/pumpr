@@ -18,7 +18,26 @@ function createdTweetId(payload = {}) {
     payload?.result?.tweet_id,
     payload?.result?.id
   ];
-  return candidates.map((value) => String(value || "").trim()).find((value) => /^\d{5,}$/.test(value)) || "";
+  const direct = candidates.map((value) => String(value || "").trim()).find((value) => /^\d{5,}$/.test(value));
+  if (direct) return direct;
+
+  const visited = new Set();
+  const walk = (value, parentKey = "") => {
+    if (!value || typeof value !== "object" || visited.has(value)) return "";
+    visited.add(value);
+    for (const [key, child] of Object.entries(value)) {
+      const normalizedKey = key.replace(/[^a-z0-9]/gi, "").toLowerCase();
+      const parent = String(parentKey || "").toLowerCase();
+      const isTweetIdKey = ["tweetid", "tweetidstr", "restid", "idstr"].includes(normalizedKey);
+      const isContextualId = normalizedKey === "id" && /tweet|create|result|data/.test(parent) && !/user/.test(parent);
+      const candidate = String(child || "").trim();
+      if ((isTweetIdKey || isContextualId) && /^\d{5,}$/.test(candidate)) return candidate;
+      const nested = walk(child, `${parent}.${normalizedKey}`);
+      if (nested) return nested;
+    }
+    return "";
+  };
+  return walk(payload);
 }
 
 function sleep(ms) {
