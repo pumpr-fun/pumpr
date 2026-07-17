@@ -262,6 +262,7 @@ if (dom.terminal) {
   }
 }
 
+
 function safeParse(value, fallback) {
   try {
     return JSON.parse(String(value || ""));
